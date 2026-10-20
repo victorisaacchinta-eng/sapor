@@ -22,7 +22,11 @@ People are bad at describing their food taste in the abstract, but they are very
 4. **Guards and widens.** Venues with no cuisine or menu data in Qloo are set aside (Qloo's cafe filter sometimes returns gyms and hotels). If too few remain, the search widens step by step, and the app says so.
 5. **Makes sure nobody is left out.** Every venue is scored for every person against the venue's own Qloo tags, blended with Qloo's per-signal explainability. The table score weighs the *lowest* person's fit as much as the average.
 6. **Writes each order.** Sapor maps the venue's Qloo menu highlights to each person's cuisines, respects vegetarians strictly, prefers desserts for a dessert outing, never defaults anyone to alcohol, and labels a dish "house favourite" when it is not a taste match.
-7. **Explains itself.** One short line per person, written by a small language model that may only use the evidence it is given, with a template fallback.
+7. **Explains itself.** One short line per person, written by Gemini Flash-Lite from the evidence alone. A validator rejects any line that addresses the reader ("you will love"), praises food with words not in the data, or uses an em dash, and falls back to a template.
+
+### What you see
+
+Every love shows Qloo's own image for it (the poster, the album art, the artist), cropped into that person's shape. Every venue shows Qloo's photo of it. Every dish is drawn: Sapor has its own set of original Bauhaus-style illustrations (bao, dosa, biryani, chai, pizza and twenty more), picked by the dish name. The table's mosaic is built from each person's colour in proportion to how well the place fits them.
 
 ### Why this needs Qloo
 
@@ -65,7 +69,7 @@ cp .env.example .env.local      # then put your key in .env.local
 npm run dev                      # http://localhost:3000
 ```
 
-`QLOO_API_KEY` is the only required value. The language layer is optional: set any one of `GROQ_API_KEY`, `CEREBRAS_API_KEY` or `GEMINI_API_KEY` (all have free tiers). Without one, Sapor still parses "Name: thing, thing" input with simple rules and writes its explanations from templates.
+`QLOO_API_KEY` is the only required value. The language layer is optional: set `GEMINI_API_KEY` (free tier from Google AI Studio; the hosted demo uses `gemini-flash-lite-latest`) or `GROQ_API_KEY`. Without one, Sapor still parses "Name: thing, thing" input with simple rules and writes its explanations from templates.
 
 To deploy, import the repo into Vercel and add the same environment variables. Every Qloo call happens in server routes (`src/app/api/*`); the key never reaches the browser.
 
@@ -75,9 +79,9 @@ To deploy, import the repo into Vercel and add the same environment variables. E
 src/lib/qloo.ts      server-only Qloo client: timeout, one bounded retry, LRU cache
 src/lib/agent.ts     resolution, taste profiles, venue search, guardrails, fairness scoring
 src/lib/dishes.ts    Sapor's dish-to-cuisine map, vegetarian, dessert and alcohol rules
-src/lib/llm.ts       optional language layer with a free-provider fallback chain
-src/app/api/         resolve, plan (streams the agent's steps), parse
-src/components/      the interface
+src/lib/llm.ts       optional language layer, provider fallback chain, copy validator
+src/app/api/         resolve, plan (streams the agent's steps), parse, img (Qloo image relay)
+src/components/      the interface; art.tsx holds the mosaic, seat shapes and dish illustrations
 ```
 
 ## Known limitations
@@ -88,9 +92,10 @@ src/components/      the interface
 - **Vegetarian is keyword based.** Anything that might contain meat or egg is treated as non-veg, which is cautious but not a guarantee. Check with the venue.
 - **Coverage varies by city.** In our tests (21 Oct 2026) menu highlights were specific and rich in Hyderabad, Bengaluru and Brooklyn. In Shoreditch, London the top picks were food halls and arcades with generic highlights ("Indian dishes"), some outside the neighbourhood typed. Smaller towns may return few venues with menu data.
 - **Freshness.** Qloo's venue data may lag real openings and closures.
+- **Language layer quota.** The explanations run on Gemini's free tier, which has a daily cap. When it is reached, Sapor switches to template lines; picks and orders are unaffected.
 
 ## Credits
 
-Taste data: [Qloo](https://www.qloo.com/) Taste AI. Type: Fraunces (Undercase Type, SIL OFL) and Switzer (Indian Type Foundry, Fontshare licence).
+Taste data, venue photos and entity images: [Qloo](https://www.qloo.com/) Taste AI. Type: Clash Display and Satoshi (Indian Type Foundry, Fontshare licence). Illustrations: original, drawn in code for Sapor.
 
 MIT licensed. Built by Victor Isaac.

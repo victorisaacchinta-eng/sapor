@@ -123,8 +123,9 @@ export async function parseTable(text: string): Promise<{ friends: ParsedFriend[
         content:
           "You extract a dining group from a short message. Return JSON {\"friends\":[{\"name\":string,\"loves\":[string]}]}. " +
           "Each friend has 1 to 3 loves: a specific film, TV show, music artist, book, podcast or video game, written as its title or name. " +
-          "If a love is a vague genre (\"rom-coms\", \"rap\"), keep it as written. If no names are given, use \"Friend 1\", \"Friend 2\". " +
-          "Add a hint in brackets only when the message says the type, for example \"Dune (book)\". Maximum 6 friends. Never invent loves.",
+          "If a love is a vague genre (\"rom-coms\", \"rap\"), keep it as written. If the writer includes themselves (\"me\", \"I\"), name them \"You\". " +
+          "If no names are given, use \"Friend 1\", \"Friend 2\". Write each love as its plain title with no brackets, unless the message itself names a type, " +
+          "in which case add one word in brackets: film, show, book, artist, podcast or game, for example \"Dune (book)\". Maximum 6 friends. Never invent loves.",
       },
       { role: "user", content: trimmed },
     ]);
@@ -196,9 +197,27 @@ export function templateNarration(n: NarrateInput): Narration {
   };
 }
 
+/** Rejects model copy that breaks Sapor's honesty rules, so the template is used instead. */
+const BANNED = /\b(you|your|yours|you'll|you're|delicious|tasty|amazing|perfect|best|great|guaranteed|will love|definitely)\b/i;
+const okLine = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 8 && v.length < max && !BANNED.test(v);
+
+const narrationCache = new Map<string, Narration>();
+
 export async function narrate(n: NarrateInput): Promise<Narration> {
   const fallback = templateNarration(n);
   if (!llmAvailable()) return fallback;
+  const cacheKey = JSON.stringify(n);
+  const hit = narrationCache.get(cacheKey);
+  if (hit) return hit;
+  const out = await narrateFresh(n, fallback);
+  if (out.via !== "template") {
+    narrationCache.set(cacheKey, out);
+    if (narrationCache.size > 400) narrationCache.delete(narrationCache.keys().next().value as string);
+  }
+  return out;
+}
+
+async function narrateFresh(n: NarrateInput, fallback: Narration): Promise<Narration> {
   const r = await completeJSON<{ why?: string; lines?: Record<string, string> }>(
     [
       {
@@ -209,6 +228,8 @@ export async function narrate(n: NarrateInput): Promise<Narration> {
           "Qloo data describes what people with similar taste tend to like, not what one person will do, so phrase it that way " +
           "(\"people who love Squid Game tend to...\"), never \"you will love\". " +
           "If orderKind is house_favourite, say plainly it is a house favourite rather than a taste match. " +
+          "Write in the third person about groups of people. Never address the reader: no you, your or yours. " +
+          "Never praise food or places with words that are not in the facts (no great, delicious, tasty, amazing, perfect, best). " +
           "Do not use em dashes. British spelling. " +
           "Return JSON {\"why\": one sentence under 22 words on why this place fits the whole table, \"lines\": {friendKey: one sentence under 24 words}}.",
       },
@@ -218,9 +239,15 @@ export async function narrate(n: NarrateInput): Promise<Narration> {
   );
   if (!r) return fallback;
   const lines: Record<string, string> = { ...fallback.lines };
+  let used = 0;
   for (const [k, v] of Object.entries(r.data.lines ?? {})) {
-    if (typeof v === "string" && lines[k] !== undefined && v.length < 240) lines[k] = clean(v);
+    if (lines[k] !== undefined && okLine(v, 240)) {
+      lines[k] = clean(v);
+      used += 1;
+    }
   }
-  const why = typeof r.data.why === "string" && r.data.why.length < 200 ? clean(r.data.why) : fallback.why;
+  const whyOk = okLine(r.data.why, 200);
+  const why = whyOk ? clean(r.data.why as string) : fallback.why;
+  if (!used && !whyOk) return fallback;
   return { headline: n.pick.name, why, lines, via: r.provider };
 }

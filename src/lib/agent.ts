@@ -21,6 +21,7 @@ export type Candidate = {
   kind: string; // artist, movie, tv_show, book, podcast, videogame
   year?: number;
   blurb?: string;
+  image?: string;
   popularity: number;
 };
 
@@ -60,6 +61,7 @@ function toCandidate(e: QlooEntity): Candidate {
     kind: kindOf(e),
     year: typeof p.release_year === "number" ? p.release_year : undefined,
     blurb: blurb ? blurb.slice(0, 140) : undefined,
+    image: typeof p.image?.url === "string" ? p.image.url : undefined,
     popularity: e.popularity ?? 0,
   };
 }
@@ -71,12 +73,14 @@ const simpleName = (s: string) =>
     .replace(/\([^)]*\)/g, "")
     .replace(/[^a-z0-9]+/g, "");
 
-/** "Dune (book)" -> { text: "Dune", kind: "book" } */
+/** "Dune (book)" -> { text: "Dune", kind: "book" }; "BTS (music artist)" -> artist; unknown brackets are dropped. */
 function splitHint(raw: string): { text: string; kind?: string } {
-  const m = raw.match(/^(.*?)[\s]*\(([^)]+)\)\s*$/);
+  const m = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
   if (!m) return { text: raw.trim() };
-  const hint = KIND_HINTS[m[2].trim().toLowerCase()];
-  return hint ? { text: m[1].trim(), kind: hint } : { text: raw.trim() };
+  const words = m[2].toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const order = ["book", "novel", "podcast", "game", "anime", "series", "show", "tv", "film", "movie", "band", "singer", "artist", "music"];
+  const hit = order.find((w) => words.includes(w));
+  return { text: m[1].trim() || raw.trim(), kind: hit ? KIND_HINTS[hit] : undefined };
 }
 
 export async function resolveLove(raw: string, log?: QlooRequestLog[]): Promise<Resolution> {
@@ -84,7 +88,17 @@ export async function resolveLove(raw: string, log?: QlooRequestLog[]): Promise<
   const { text, kind } = splitHint(input);
   if (!text) return { input, status: "not_found" };
   const results = (await searchTaste(text, log)).map(toCandidate).filter((c) => c.kind);
-  const pool = kind ? results.filter((c) => c.kind === kind) : results;
+  // Prefer an exact name, then a name containing the query as a whole word
+  // ("Rahman" should find A. R. Rahman, not "Rahmania"), then Qloo's own order.
+  const q = text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").trim();
+  const tier = (c: Candidate) => {
+    const nm = ` ${c.name.toLowerCase().replace(/\([^)]*\)/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim()} `;
+    if (nm.trim() === q) return 0;
+    if (nm.includes(` ${q} `)) return 1;
+    return 2;
+  };
+  const ranked = results.map((c, i) => ({ c, i, t: tier(c) })).sort((a, b) => a.t - b.t || (a.t === 1 ? b.c.popularity - a.c.popularity : 0) || a.i - b.i).map((x) => x.c);
+  const pool = kind ? ranked.filter((c) => c.kind === kind) : ranked;
   if (!pool.length) return { input, status: "not_found" };
 
   const top = pool[0];

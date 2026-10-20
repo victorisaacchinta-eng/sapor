@@ -2,12 +2,13 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import s from "./sapor.module.css";
+import { DishArt, Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
 
 /* ------------------------------------------------------------------ */
-/* Types mirrored from the server (kept small on purpose)               */
+/* Types mirrored from the server                                      */
 /* ------------------------------------------------------------------ */
 
-type Candidate = { id: string; name: string; kind: string; year?: number; blurb?: string; popularity: number };
+type Candidate = { id: string; name: string; kind: string; year?: number; blurb?: string; image?: string; popularity: number };
 type Resolution =
   | { input: string; status: "resolved"; chosen: Candidate; alternatives: Candidate[] }
   | { input: string; status: "ambiguous"; options: Candidate[] }
@@ -40,8 +41,6 @@ type Pick = {
   address?: string;
   image?: string;
   rating?: number;
-  lat?: number;
-  lon?: number;
   qlooAffinity: number;
   tableScore: number;
   fairness: number;
@@ -62,28 +61,29 @@ type Result = {
   relaxations: string[];
   considered: number;
   rejected: { name: string; reason: string }[];
-  qloo: { calls: number; cached: number; requests: { path: string; params: Record<string, string>; ms: number; cached: boolean }[] };
+  qloo: { calls: number; cached: number };
 };
 type Narration = { id: string; headline: string; why: string; lines: Record<string, string>; via: string };
+type Diner = { key: string; name: string; index: number; loves: Candidate[]; veg: boolean };
 
 type Run =
   | { state: "idle" }
-  | { state: "running"; steps: Step[]; names: Record<string, string> }
-  | { state: "done"; steps: Step[]; names: Record<string, string>; result: Result; narration: Record<string, Narration> }
-  | { state: "error"; steps: Step[]; message: string };
+  | { state: "running"; steps: Step[]; diners: Diner[] }
+  | { state: "done"; steps: Step[]; diners: Diner[]; result: Result; narration: Record<string, Narration> }
+  | { state: "error"; steps: Step[]; diners: Diner[]; message: string };
 
 /* ------------------------------------------------------------------ */
 
-// Deterministic ids: the same sequence on server and client, so prerendering stays stable.
 let seq = 0;
 const uid = () => `u${(seq += 1)}`;
+
 const KIND_LABEL: Record<string, string> = {
-  artist: "music",
-  movie: "film",
+  artist: "Music",
+  movie: "Film",
   tv_show: "TV show",
-  book: "book",
-  podcast: "podcast",
-  videogame: "game",
+  book: "Book",
+  podcast: "Podcast",
+  videogame: "Game",
 };
 const ASK_LABEL: Record<string, string> = {
   artist: "The music act",
@@ -93,15 +93,21 @@ const ASK_LABEL: Record<string, string> = {
   podcast: "The podcast",
   videogame: "The game",
 };
-const OCCASIONS: { id: Occasion; label: string }[] = [
-  { id: "coffee", label: "Coffee" },
-  { id: "meal", label: "A meal" },
-  { id: "dessert", label: "Dessert" },
+const OCCASIONS: { id: Occasion; label: string; art: string }[] = [
+  { id: "coffee", label: "Coffee", art: "cappuccino" },
+  { id: "meal", label: "A meal", art: "biryani" },
+  { id: "dessert", label: "Dessert", art: "cake" },
 ];
-const PLACES = ["Jubilee Hills, Hyderabad", "Banjara Hills, Hyderabad", "Gachibowli, Hyderabad", "Indiranagar, Bengaluru", "Brooklyn, New York"];
+const PLACES = ["Jubilee Hills, Hyderabad", "Banjara Hills, Hyderabad", "Gachibowli, Hyderabad", "Indiranagar, Bengaluru", "Bandra, Mumbai", "Brooklyn, New York"];
+
+/** Route Qloo images through our relay, asking Qloo for a width that suits where the image is shown. */
+const img = (u?: string, w = 240) => (u ? `/api/img?u=${encodeURIComponent(u.replace(/-\d+x-(auto|outside)/, `-${w}x-$1`))}` : undefined);
+const qimg = (id: string) => `https://images.qloo.com/i/${id}-420x-auto.jpg`;
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+const mapsUrl = (p: Pick) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address].filter(Boolean).join(", "))}`;
 
 const emptySeat = (): Seat => ({ uid: uid(), name: "", veg: false, loves: [], draft: "" });
-
 const resolvedLove = (c: Candidate): Love => ({ uid: uid(), text: c.name, status: "resolved", chosen: c });
 
 /** Entities resolved live from Qloo on 21 Oct 2026, so the sample needs no lookups. */
@@ -112,8 +118,8 @@ const SAMPLE: Seat[] = [
     veg: false,
     draft: "",
     loves: [
-      resolvedLove({ id: "F347D506-CB6F-46FA-9A8B-AFBC31C71A1A", name: "BTS", kind: "artist", popularity: 0.996 }),
-      resolvedLove({ id: "340C4A42-8726-42C9-BFA6-FBA6F923E5E6", name: "Squid Game", kind: "tv_show", year: 2021, popularity: 0.99 }),
+      resolvedLove({ id: "F347D506-CB6F-46FA-9A8B-AFBC31C71A1A", name: "BTS", kind: "artist", popularity: 0.996, image: qimg("F347D506-CB6F-46FA-9A8B-AFBC31C71A1A") }),
+      resolvedLove({ id: "340C4A42-8726-42C9-BFA6-FBA6F923E5E6", name: "Squid Game", kind: "tv_show", year: 2021, popularity: 0.99, image: qimg("340C4A42-8726-42C9-BFA6-FBA6F923E5E6") }),
     ],
   },
   {
@@ -122,8 +128,8 @@ const SAMPLE: Seat[] = [
     veg: true,
     draft: "",
     loves: [
-      resolvedLove({ id: "9986F595-C20E-4EBB-828F-55E7DEEBE448", name: "A.R. Rahman", kind: "artist", popularity: 0.99 }),
-      resolvedLove({ id: "D2AD70AF-0750-4202-8AD2-E57C4C616631", name: "Pushpa: The Rise - Part 1", kind: "movie", year: 2021, popularity: 0.98 }),
+      resolvedLove({ id: "9986F595-C20E-4EBB-828F-55E7DEEBE448", name: "A.R. Rahman", kind: "artist", popularity: 0.99, image: qimg("9986F595-C20E-4EBB-828F-55E7DEEBE448") }),
+      resolvedLove({ id: "D2AD70AF-0750-4202-8AD2-E57C4C616631", name: "Pushpa: The Rise", kind: "movie", year: 2021, popularity: 0.98, image: qimg("D2AD70AF-0750-4202-8AD2-E57C4C616631") }),
     ],
   },
   {
@@ -132,15 +138,19 @@ const SAMPLE: Seat[] = [
     veg: false,
     draft: "",
     loves: [
-      resolvedLove({ id: "871AE4FF-0D03-45CE-A6E1-B255607FA3DD", name: "Prateek Kuhad", kind: "artist", popularity: 0.97 }),
-      resolvedLove({ id: "EDA54D37-08C7-457D-83F8-1BCE21FEDC63", name: "Before Sunrise", kind: "movie", year: 1995, popularity: 0.98 }),
+      resolvedLove({ id: "871AE4FF-0D03-45CE-A6E1-B255607FA3DD", name: "Prateek Kuhad", kind: "artist", popularity: 0.97, image: qimg("871AE4FF-0D03-45CE-A6E1-B255607FA3DD") }),
+      resolvedLove({ id: "EDA54D37-08C7-457D-83F8-1BCE21FEDC63", name: "Before Sunrise", kind: "movie", year: 1995, popularity: 0.98, image: qimg("EDA54D37-08C7-457D-83F8-1BCE21FEDC63") }),
     ],
   },
 ];
 
-const pct = (n: number) => `${Math.round(n * 100)}%`;
-const mapsUrl = (p: Pick) =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address].filter(Boolean).join(", "))}`;
+const HERO_TILES = makeMosaic(20261021, 20);
+const HERO_DISHES: Record<number, { dish: string; a: string; b: string }> = {
+  2: { dish: "bao", a: "var(--red)", b: "var(--green)" },
+  9: { dish: "masala chai", a: "var(--yellow)", b: "var(--red)" },
+  13: { dish: "masala dosa", a: "var(--green)", b: "var(--red)" },
+  16: { dish: "cappuccino", a: "var(--blue)", b: "var(--yellow)" },
+};
 
 /* ------------------------------------------------------------------ */
 
@@ -154,7 +164,8 @@ export default function Sapor() {
   const [freeText, setFreeText] = useState("");
   const [parseNote, setParseNote] = useState<string | null>(null);
   const [parsing, setParsing] = useState(false);
-  const checkRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLElement>(null);
+  const tableRef = useRef<HTMLElement>(null);
 
   const updateSeat = useCallback((id: string, fn: (s: Seat) => Seat) => {
     setSeats((prev) => prev.map((x) => (x.uid === id ? fn(x) : x)));
@@ -207,6 +218,7 @@ export default function Sapor() {
     setCity("Jubilee Hills, Hyderabad");
     setOccasion("coffee");
     setTyping(false);
+    requestAnimationFrame(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
 
   const parseFreeText = async () => {
@@ -221,7 +233,7 @@ export default function Sapor() {
       });
       const data = (await res.json()) as { friends?: { name: string; loves: string[] }[]; error?: string };
       if (!res.ok || !data.friends?.length) {
-        setParseNote(data.error ?? "Sapor couldn't find people and their loves in that. Try: Riya: BTS, Squid Game. Arjun: Pushpa.");
+        setParseNote(data.error ?? "Sapor couldn't find people and their loves in that. Try: Riya loves BTS and Squid Game. Arjun loves Pushpa.");
         return;
       }
       const next: Seat[] = data.friends.map((f) => ({
@@ -248,23 +260,21 @@ export default function Sapor() {
   const go = async () => {
     if (!ready.ok) return;
     const included = ready.filled.slice(0, 6);
-    const names: Record<string, string> = {};
-    included.forEach((x, i) => (names[String.fromCharCode(65 + i)] = x.name.trim() || `Guest ${i + 1}`));
+    const diners: Diner[] = included.map((x, i) => ({
+      key: String.fromCharCode(65 + i),
+      name: x.name.trim() || `Guest ${seats.indexOf(x) + 1}`,
+      index: seats.indexOf(x),
+      veg: x.veg,
+      loves: x.loves.filter((l) => l.status === "resolved" && l.chosen).map((l) => l.chosen!),
+    }));
     const body = {
       city: city.trim(),
       occasion,
-      friends: included.map((x) => ({
-        veg: x.veg,
-        loves: x.loves
-          .filter((l) => l.status === "resolved" && l.chosen)
-          .map((l) => ({ id: l.chosen!.id, name: l.chosen!.name, kind: l.chosen!.kind })),
-      })),
+      friends: diners.map((d) => ({ veg: d.veg, loves: d.loves.map((c) => ({ id: c.id, name: c.name, kind: c.kind })) })),
     };
     setActive(0);
-    setRun({ state: "running", steps: [], names });
-    if (window.matchMedia("(max-width: 900px)").matches) {
-      requestAnimationFrame(() => checkRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-    }
+    setRun({ state: "running", steps: [], diners });
+    requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
 
     const steps: Step[] = [];
     const upsert = (st: Step) => {
@@ -299,12 +309,9 @@ export default function Sapor() {
           const ev = JSON.parse(line);
           if (ev.type === "step") {
             upsert(ev);
-            setRun({ state: "running", steps: [...steps], names });
+            setRun({ state: "running", steps: [...steps], diners });
           } else if (ev.type === "result") {
             result = ev;
-            if (!ev.picks.length) {
-              setRun({ state: "done", steps: [...steps], names, result: ev, narration: {} });
-            }
           } else if (ev.type === "narration") {
             for (const it of ev.items as Narration[]) narration[it.id] = it;
           } else if (ev.type === "error") {
@@ -313,9 +320,9 @@ export default function Sapor() {
         }
       }
       if (!result) throw new Error("The planner stopped early. Try again.");
-      setRun({ state: "done", steps: [...steps], names, result, narration });
+      setRun({ state: "done", steps: [...steps], diners, result, narration });
     } catch (e) {
-      setRun({ state: "error", steps: [...steps], message: (e as Error).message });
+      setRun({ state: "error", steps: [...steps], diners, message: (e as Error).message });
     }
   };
 
@@ -324,193 +331,136 @@ export default function Sapor() {
   return (
     <div className={s.page}>
       <header className={s.masthead}>
-        <div className={s.brand}>
-          <span className={s.wordmark}>Sapor</span>
-          <span className={s.gloss}>Latin for taste</span>
-        </div>
-        <a className={s.howLink} href="#how">
-          How it decides
+        <a href="#top" className={s.wordmark} aria-label="Sapor home">
+          Sap
+          <span className={s.wordO} aria-hidden>
+            <Glyph shape="circle" color="var(--red)" size={30} />
+          </span>
+          r
         </a>
+        <nav className={s.nav}>
+          <a href="#how">How it decides</a>
+          <button type="button" onClick={loadSample}>
+            Try a sample table
+          </button>
+        </nav>
       </header>
 
-      <main className={s.grid}>
-        <section className={s.composer} aria-labelledby="table-h">
-          <h1 className={s.hero}>Where should we go?</h1>
+      <section className={s.hero} id="top">
+        <div className={s.heroCopy}>
+          <h1 className={s.h1}>Where should we go?</h1>
           <p className={s.lede}>
             Everyone names a film, show or artist they love. Sapor reads the taste behind them with Qloo and picks a
             place that suits the whole table, down to what each of you should order.
           </p>
+          <div className={s.heroCtas}>
+            <a href="#table" className={s.btnPrimary}>
+              Seat your table
+            </a>
+            <button type="button" className={s.btnGhost} onClick={loadSample}>
+              Try a sample table
+            </button>
+          </div>
+          <p className={s.gloss}>
+            <span>Sapor</span> is Latin for taste.
+          </p>
+        </div>
+        <div className={s.heroArt} aria-hidden>
+          <div className={s.heroGrid}>
+            {HERO_TILES.map((t, i) => (
+              <div key={i} className={s.heroTile} style={{ ["--d" as string]: `${t.delay}ms` }}>
+                {HERO_DISHES[i] ? (
+                  <div className={s.heroDish}>
+                    <DishArt dish={HERO_DISHES[i].dish} a={HERO_DISHES[i].a} b={HERO_DISHES[i].b} size={120} title="" />
+                  </div>
+                ) : (
+                  <Tile {...t} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-          <div className={s.tableHead}>
-            <h2 id="table-h" className={s.h2}>
-              Your table
-            </h2>
-            <div className={s.tableTools}>
-              <button type="button" className={s.textBtn} onClick={() => setTyping((t) => !t)} aria-expanded={typing}>
-                {typing ? "Back to seats" : "Type it out instead"}
+      <section className={s.tableSection} id="table" ref={tableRef} aria-labelledby="table-h">
+        <div className={s.sectionHead}>
+          <h2 id="table-h" className={s.h2}>
+            Your table
+          </h2>
+          <div className={s.sectionTools}>
+            <button type="button" className={s.link} onClick={() => setTyping((t) => !t)} aria-expanded={typing}>
+              {typing ? "Back to seats" : "Type it out instead"}
+            </button>
+            <button type="button" className={s.link} onClick={loadSample}>
+              Fill a sample table
+            </button>
+          </div>
+        </div>
+
+        {typing ? (
+          <div className={s.freeText}>
+            <label htmlFor="free" className={s.label}>
+              Who is coming, and what do they love?
+            </label>
+            <textarea
+              id="free"
+              className={s.textarea}
+              rows={4}
+              maxLength={800}
+              value={freeText}
+              onChange={(e) => setFreeText(e.target.value)}
+              placeholder="Riya is all BTS and Squid Game. Arjun loves A. R. Rahman and Pushpa. Meera can't stop playing Prateek Kuhad."
+            />
+            <div className={s.row}>
+              <button type="button" className={s.btnPrimary} onClick={parseFreeText} disabled={parsing || !freeText.trim()}>
+                {parsing ? "Reading it" : "Fill in the seats"}
               </button>
-              <button type="button" className={s.textBtn} onClick={loadSample}>
-                Try a sample table
-              </button>
+              {parseNote && <p className={s.note}>{parseNote}</p>}
             </div>
           </div>
-
-          {typing ? (
-            <div className={s.freeText}>
-              <label htmlFor="free" className={s.label}>
-                Who is coming, and what do they love?
-              </label>
-              <textarea
-                id="free"
-                className={s.textarea}
-                rows={4}
-                maxLength={800}
-                value={freeText}
-                onChange={(e) => setFreeText(e.target.value)}
-                placeholder="Riya is all BTS and Squid Game. Arjun loves A. R. Rahman and Pushpa. Meera can't stop playing Prateek Kuhad."
+        ) : (
+          <ol className={s.seats}>
+            {seats.map((st, i) => (
+              <SeatCard
+                key={st.uid}
+                seat={st}
+                index={i}
+                canRemove={seats.length > 1}
+                onName={(v) => updateSeat(st.uid, (x) => ({ ...x, name: v }))}
+                onVeg={(v) => updateSeat(st.uid, (x) => ({ ...x, veg: v }))}
+                onDraft={(v) => updateSeat(st.uid, (x) => ({ ...x, draft: v }))}
+                onAdd={() => addLove(st)}
+                onRemove={() => setSeats((p) => p.filter((x) => x.uid !== st.uid))}
+                onRemoveLove={(id) => updateSeat(st.uid, (x) => ({ ...x, loves: x.loves.filter((y) => y.uid !== id) }))}
+                onChoose={(id, c) => updateLove(st.uid, id, (x) => ({ ...x, status: "resolved", chosen: c }))}
               />
-              <div className={s.row}>
-                <button type="button" className={s.secondary} onClick={parseFreeText} disabled={parsing || !freeText.trim()}>
-                  {parsing ? "Reading it" : "Fill in the seats"}
+            ))}
+            {seats.length < 6 && (
+              <li className={s.addSeat}>
+                <button type="button" onClick={() => setSeats((p) => [...p, emptySeat()])}>
+                  <Glyph shape={seat(seats.length).shape} color={seat(seats.length).color} size={56} />
+                  <span>Pull up a chair</span>
                 </button>
-                {parseNote && <p className={s.note}>{parseNote}</p>}
-              </div>
-            </div>
-          ) : (
-            <ol className={s.seats}>
-              {seats.map((seat, i) => (
-                <li key={seat.uid} className={s.seat}>
-                  <div className={s.seatTop}>
-                    <span className={s.seatNo} aria-hidden>
-                      {i + 1}
-                    </span>
-                    <input
-                      className={s.nameInput}
-                      value={seat.name}
-                      maxLength={24}
-                      onChange={(e) => updateSeat(seat.uid, (x) => ({ ...x, name: e.target.value }))}
-                      placeholder={`Guest ${i + 1}`}
-                      aria-label={`Seat ${i + 1} name`}
-                    />
-                    <label className={s.veg}>
-                      <input
-                        type="checkbox"
-                        checked={seat.veg}
-                        onChange={(e) => updateSeat(seat.uid, (x) => ({ ...x, veg: e.target.checked }))}
-                      />
-                      <span>Veg</span>
-                    </label>
-                    {seats.length > 1 && (
-                      <button
-                        type="button"
-                        className={s.remove}
-                        onClick={() => setSeats((p) => p.filter((x) => x.uid !== seat.uid))}
-                        aria-label={`Remove ${seat.name || `guest ${i + 1}`}`}
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
+              </li>
+            )}
+          </ol>
+        )}
 
-                  <ul className={s.loves}>
-                    {seat.loves.map((l) => (
-                      <li key={l.uid} className={s.love} data-status={l.status}>
-                        {l.status === "resolved" && l.chosen && (
-                          <span className={s.loveMain}>
-                            <span className={s.loveName}>{l.chosen.name}</span>
-                            <span className={s.loveKind}>
-                              {KIND_LABEL[l.chosen.kind] ?? l.chosen.kind}
-                              {l.chosen.year ? `, ${l.chosen.year}` : ""}
-                            </span>
-                          </span>
-                        )}
-                        {l.status === "pending" && (
-                          <span className={s.loveMain}>
-                            <span className={s.loveName}>{l.text}</span>
-                            <span className={s.loveKind}>looking it up</span>
-                          </span>
-                        )}
-                        {(l.status === "not_found" || l.status === "error") && (
-                          <span className={s.loveMain}>
-                            <span className={s.loveName}>{l.text}</span>
-                            <span className={s.loveWarn}>
-                              {l.status === "error" ? "Couldn't check this. Remove and try again." : "Qloo doesn't know this one. Try a fuller title."}
-                            </span>
-                          </span>
-                        )}
-                        {l.status === "ambiguous" && l.options && (
-                          <span className={s.ask} role="group" aria-label={`Which ${l.text}?`}>
-                            <span className={s.askQ}>Which {l.text}?</span>
-                            {l.options.map((o) => (
-                              <button
-                                type="button"
-                                key={o.id}
-                                className={s.askOpt}
-                                onClick={() => updateLove(seat.uid, l.uid, (x) => ({ ...x, status: "resolved", chosen: o }))}
-                              >
-                                {ASK_LABEL[o.kind] ?? o.kind}
-                                {o.year ? ` (${o.year})` : ""}
-                              </button>
-                            ))}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          className={s.loveX}
-                          onClick={() => updateSeat(seat.uid, (x) => ({ ...x, loves: x.loves.filter((y) => y.uid !== l.uid) }))}
-                          aria-label={`Remove ${l.chosen?.name ?? l.text}`}
-                        >
-                          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden>
-                            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" />
-                          </svg>
-                        </button>
-                      </li>
-                    ))}
-                    {seat.loves.length < 3 && (
-                      <li className={s.addLove}>
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            addLove(seat);
-                          }}
-                        >
-                          <input
-                            className={s.loveInput}
-                            value={seat.draft}
-                            maxLength={90}
-                            onChange={(e) => updateSeat(seat.uid, (x) => ({ ...x, draft: e.target.value }))}
-                            onBlur={() => seat.draft.trim() && addLove(seat)}
-                            placeholder={seat.loves.length ? "Something else they love" : "A film, show, artist or book"}
-                            aria-label={`Something ${seat.name || `guest ${i + 1}`} loves`}
-                          />
-                        </form>
-                      </li>
-                    )}
-                  </ul>
-                </li>
-              ))}
-            </ol>
-          )}
-
-          {!typing && seats.length < 6 && (
-            <button type="button" className={s.textBtn} onClick={() => setSeats((p) => [...p, emptySeat()])}>
-              Add a seat
-            </button>
-          )}
-
-          <fieldset className={s.options}>
+        <div className={s.planBar}>
+          <fieldset className={s.occasions}>
             <legend className={s.label}>What for</legend>
-            <div className={s.segment}>
-              {OCCASIONS.map((o) => (
-                <label key={o.id} className={s.segOpt}>
+            <div className={s.occasionRow}>
+              {OCCASIONS.map((o, i) => (
+                <label key={o.id} className={s.occasion} data-on={occasion === o.id}>
                   <input type="radio" name="occasion" value={o.id} checked={occasion === o.id} onChange={() => setOccasion(o.id)} />
+                  <DishArt dish={o.art} a={["var(--red)", "var(--green)", "var(--blue)"][i]} b="var(--yellow)" size={44} title="" />
                   <span>{o.label}</span>
                 </label>
               ))}
             </div>
           </fieldset>
 
-          <div className={s.options}>
+          <div className={s.where}>
             <label htmlFor="where" className={s.label}>
               Where
             </label>
@@ -530,34 +480,43 @@ export default function Sapor() {
             </datalist>
           </div>
 
-          <div className={s.go}>
-            <button type="button" className={s.primary} onClick={go} disabled={!ready.ok || run.state === "running"}>
+          <div className={s.goWrap}>
+            <button type="button" className={s.btnGo} onClick={go} disabled={!ready.ok || run.state === "running"}>
               {run.state === "running" ? "Reading the table" : "Pick our place"}
             </button>
             <p className={s.goHint} aria-live="polite">
               {ready.waiting
-                ? "Answer the question above first."
+                ? "Answer the question in the seats first."
                 : ready.filled.length === 0
                   ? "Add at least one love to a seat."
-                  : `${ready.filled.length} ${ready.filled.length === 1 ? "person" : "people"} at the table. Names stay on this device.`}
+                  : `${ready.filled.length} at the table. Names stay on this device.`}
             </p>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className={s.output} ref={checkRef} aria-live="polite" aria-label="Sapor's pick">
-          <Output run={run} active={active} setActive={setActive} />
-        </section>
-      </main>
+      <section className={s.resultSection} ref={resultRef} aria-live="polite" aria-label="Sapor's pick">
+        {run.state !== "idle" && <Output run={run} active={active} setActive={setActive} />}
+      </section>
 
       <HowItDecides />
 
       <footer className={s.footer}>
-        <p>
-          Taste data from Qloo&rsquo;s taste graph. Qloo describes what people with similar taste tend to like, not
-          what any one person will do. Venues, tags and menu highlights come from Qloo; dish to cuisine matching is
-          Sapor&rsquo;s own.
-        </p>
-        <p>Built by Victor Isaac for the Qloo Agentic Hackathon, 2026. Open source under MIT.</p>
+        <div className={s.footInner}>
+          <p className={s.footMark}>
+            Sap
+            <span className={s.wordO} aria-hidden>
+              <Glyph shape="circle" color="var(--red)" size={22} />
+            </span>
+            r
+          </p>
+          <p>
+            Taste data, venues, tags, menu highlights and images come from Qloo&rsquo;s taste graph. Qloo describes what
+            people with similar taste tend to like, not what any one person will do. Dish-to-cuisine matching and every
+            illustration are Sapor&rsquo;s own.
+          </p>
+          <p>Built by Victor Isaac for the Qloo Agentic Hackathon, 2026. Open source under MIT.</p>
+        </div>
       </footer>
     </div>
   );
@@ -565,37 +524,166 @@ export default function Sapor() {
 
 /* ------------------------------------------------------------------ */
 
-function Output({ run, active, setActive }: { run: Run; active: number; setActive: (n: number) => void }) {
-  if (run.state === "idle") {
+function Thumb({ src, shape, color, size = 52, alt }: { src?: string; shape: keyof typeof SHAPE_RADIUS; color: string; size?: number; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  const style = { width: size, height: size, borderRadius: SHAPE_RADIUS[shape], ["--c" as string]: color };
+  if (!src || failed) {
     return (
-      <div className={s.blankCheck} aria-hidden="false">
-        <div className={s.checkPaper}>
-          <div className={s.checkHead}>
-            <span>Guest check</span>
-            <span className={s.checkNo}>No. 0000</span>
-          </div>
-          <p className={s.blankLine}>Seat your table and Sapor writes the order here: one place for everyone, and what each person should get.</p>
-          <div className={s.ruled} aria-hidden>
-            {Array.from({ length: 7 }).map((_, i) => (
-              <span key={i} />
-            ))}
-          </div>
-        </div>
-      </div>
+      <span className={s.thumb} style={style} aria-hidden>
+        <Glyph shape={shape} color={color} size={size * 0.5} />
+      </span>
     );
   }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img className={s.thumb} style={style} src={img(src)} alt={alt} width={size} height={size} loading="lazy" onError={() => setFailed(true)} />
+  );
+}
 
-  const steps = run.steps;
+function SeatCard({
+  seat: st,
+  index,
+  canRemove,
+  onName,
+  onVeg,
+  onDraft,
+  onAdd,
+  onRemove,
+  onRemoveLove,
+  onChoose,
+}: {
+  seat: Seat;
+  index: number;
+  canRemove: boolean;
+  onName: (v: string) => void;
+  onVeg: (v: boolean) => void;
+  onDraft: (v: string) => void;
+  onAdd: () => void;
+  onRemove: () => void;
+  onRemoveLove: (id: string) => void;
+  onChoose: (id: string, c: Candidate) => void;
+}) {
+  const look = seat(index);
+  return (
+    <li className={s.seat} style={{ ["--c" as string]: look.color, ["--on" as string]: look.on }}>
+      <div className={s.seatBand}>
+        <Glyph shape={look.shape} color={look.on} size={26} />
+        <input
+          className={s.nameInput}
+          value={st.name}
+          maxLength={24}
+          onChange={(e) => onName(e.target.value)}
+          placeholder={`Guest ${index + 1}`}
+          aria-label={`Seat ${index + 1} name`}
+        />
+        {canRemove && (
+          <button type="button" className={s.seatRemove} onClick={onRemove} aria-label={`Remove ${st.name || `guest ${index + 1}`}`}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden>
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      <ul className={s.loves}>
+        {st.loves.map((l) => (
+          <li key={l.uid} className={s.love} data-status={l.status}>
+            {l.status === "resolved" && l.chosen && (
+              <>
+                <Thumb src={l.chosen.image} shape={look.shape} color={look.color} alt={l.chosen.name} />
+                <span className={s.loveText}>
+                  <span className={s.loveName}>{l.chosen.name}</span>
+                  <span className={s.loveKind}>
+                    {KIND_LABEL[l.chosen.kind] ?? l.chosen.kind}
+                    {l.chosen.year ? `, ${l.chosen.year}` : ""}
+                  </span>
+                </span>
+              </>
+            )}
+            {l.status === "pending" && (
+              <>
+                <span className={`${s.thumb} ${s.thumbPending}`} style={{ borderRadius: SHAPE_RADIUS[look.shape] }} aria-hidden />
+                <span className={s.loveText}>
+                  <span className={s.loveName}>{l.text}</span>
+                  <span className={s.loveKind}>Looking it up</span>
+                </span>
+              </>
+            )}
+            {(l.status === "not_found" || l.status === "error") && (
+              <span className={s.loveText}>
+                <span className={s.loveName}>{l.text}</span>
+                <span className={s.loveWarn}>
+                  {l.status === "error" ? "Couldn't check this. Remove it and try again." : "Qloo doesn't know this one. Try the full title."}
+                </span>
+              </span>
+            )}
+            {l.status === "ambiguous" && l.options && (
+              <div className={s.ask} role="group" aria-label={`Which ${l.text}?`}>
+                <span className={s.askQ}>Which {l.text}?</span>
+                <div className={s.askOpts}>
+                  {l.options.map((o) => (
+                    <button type="button" key={o.id} className={s.askOpt} onClick={() => onChoose(l.uid, o)}>
+                      <Thumb src={o.image} shape="square" color={look.color} size={34} alt="" />
+                      <span>
+                        {ASK_LABEL[o.kind] ?? o.kind}
+                        {o.year ? ` (${o.year})` : ""}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button type="button" className={s.loveX} onClick={() => onRemoveLove(l.uid)} aria-label={`Remove ${l.chosen?.name ?? l.text}`}>
+              <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden>
+                <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="2" />
+              </svg>
+            </button>
+          </li>
+        ))}
+        {st.loves.length < 3 && (
+          <li className={s.addLove}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                onAdd();
+              }}
+            >
+              <input
+                className={s.loveInput}
+                value={st.draft}
+                maxLength={90}
+                onChange={(e) => onDraft(e.target.value)}
+                onBlur={() => st.draft.trim() && onAdd()}
+                placeholder={st.loves.length ? "Something else they love" : "A film, show, artist or book"}
+                aria-label={`Something ${st.name || `guest ${index + 1}`} loves`}
+              />
+              <button type="submit" className={s.addBtn} aria-label="Add" disabled={!st.draft.trim()}>
+                <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden>
+                  <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="2" />
+                </svg>
+              </button>
+            </form>
+          </li>
+        )}
+      </ul>
+
+      <label className={s.veg}>
+        <input type="checkbox" checked={st.veg} onChange={(e) => onVeg(e.target.checked)} />
+        <span>Vegetarian</span>
+      </label>
+    </li>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function Output({ run, active, setActive }: { run: Exclude<Run, { state: "idle" }>; active: number; setActive: (n: number) => void }) {
   return (
     <>
-      <AgentLog steps={steps} running={run.state === "running"} names={run.state === "error" ? {} : run.names} />
-      {run.state === "error" && (
-        <div className={s.error} role="alert">
-          <p>{run.message}</p>
-        </div>
-      )}
+      {(run.state === "running" || run.state === "error") && <Working run={run} />}
       {run.state === "done" && run.result.picks.length === 0 && (
-        <div className={s.error} role="status">
+        <div className={s.empty}>
+          <h2 className={s.h2}>No match here yet</h2>
           <p>
             Qloo has no {run.result.venueLabel}s with menu data for &ldquo;{run.result.city}&rdquo;. Try a nearby
             neighbourhood or a bigger city name.
@@ -603,151 +691,207 @@ function Output({ run, active, setActive }: { run: Run; active: number; setActiv
         </div>
       )}
       {run.state === "done" && run.result.picks.length > 0 && (
-        <Check result={run.result} names={run.names} narration={run.narration} active={active} setActive={setActive} />
+        <Pickboard result={run.result} diners={run.diners} narration={run.narration} steps={run.steps} active={active} setActive={setActive} />
       )}
     </>
   );
 }
 
-function AgentLog({ steps, running, names }: { steps: Step[]; running: boolean; names: Record<string, string> }) {
-  // The server only knows seats as A, B, C. Swap the names back in here, on the device.
-  const named = (t: string) => t.replace(/\b([A-F]):/g, (m, k: string) => (names[k] ? `${names[k]}:` : m));
+function Working({ run }: { run: Exclude<Run, { state: "idle" | "done" }> }) {
+  const done = run.steps.filter((x) => x.status !== "running").length;
+  const tiles = useMemo(() => tableMosaic(7, run.diners.map((d) => ({ color: seat(d.index).color, weight: 1 })), 24), [run.diners]);
+  const named = (t: string) => t.replace(/\b([A-F]):/g, (m, k: string) => (run.diners.find((d) => d.key === k)?.name ?? k) + ":");
   return (
-    <div className={s.log}>
-      <h2 className={s.logTitle}>{running ? "Sapor is working" : "How Sapor got here"}</h2>
-      <ol className={s.logList}>
-        {steps.map((st) => (
-          <li key={st.id} className={s.logItem} data-status={st.status}>
-            <span className={s.logLabel}>{st.label}</span>
-            {st.detail && <span className={s.logDetail}>{named(st.detail)}</span>}
-          </li>
+    <div className={s.working}>
+      <div className={s.workMosaic} aria-hidden>
+        {tiles.map((t, i) => (
+          <div key={i} className={s.workTile} data-lit={i < done * 5 + 2} style={{ ["--d" as string]: `${(i % 6) * 60}ms` }}>
+            <Tile {...t} />
+          </div>
         ))}
-        {running && steps.length === 0 && (
-          <li className={s.logItem} data-status="running">
-            <span className={s.logLabel}>Sending the table to Qloo</span>
-          </li>
-        )}
-      </ol>
+      </div>
+      <div>
+        <h2 className={s.h2}>{run.state === "error" ? "Something stopped the agent" : "Sapor is reading your table"}</h2>
+        {run.state === "error" && <p className={s.errorMsg}>{run.message}</p>}
+        <StepList steps={run.steps} named={named} running={run.state === "running"} />
+      </div>
     </div>
   );
 }
 
-function Check({
+function StepList({ steps, named, running }: { steps: Step[]; named: (t: string) => string; running?: boolean }) {
+  return (
+    <ol className={s.steps}>
+      {steps.map((st) => (
+        <li key={st.id} className={s.step} data-status={st.status}>
+          <span className={s.stepLabel}>{st.label}</span>
+          {st.detail && <span className={s.stepDetail}>{named(st.detail)}</span>}
+        </li>
+      ))}
+      {running && steps.length === 0 && (
+        <li className={s.step} data-status="running">
+          <span className={s.stepLabel}>Sending the table to Qloo</span>
+        </li>
+      )}
+    </ol>
+  );
+}
+
+function Pickboard({
   result,
-  names,
+  diners,
   narration,
+  steps,
   active,
   setActive,
 }: {
   result: Result;
-  names: Record<string, string>;
+  diners: Diner[];
   narration: Record<string, Narration>;
+  steps: Step[];
   active: number;
   setActive: (n: number) => void;
 }) {
   const pick = result.picks[Math.min(active, result.picks.length - 1)];
   const nar = narration[pick.id];
-  // A stable check number derived from the venue, like a pad's printed serial.
-  const checkNo = String(1000 + ([...pick.id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 9000));
   const [openId, setOpenId] = useState<string | null>(null);
   const open = openId === pick.id;
+  const dinerOf = (key: string) => diners.find((d) => d.key === key)!;
   const lowest = Math.min(...pick.friends.map((f) => f.fit));
-  const lowestKey = pick.friends.find((f) => f.fit === lowest)?.key;
+  const avg = pick.friends.reduce((a, f) => a + f.fit, 0) / pick.friends.length;
+  const lowestDiner = dinerOf(pick.friends.find((f) => f.fit === lowest)!.key);
+  const tiles = tableMosaic(
+    hash(pick.id),
+    pick.friends.map((f) => ({ color: seat(dinerOf(f.key).index).color, weight: f.fit })),
+    30,
+  );
+  const named = (t: string) => t.replace(/\b([A-F]):/g, (m, k: string) => (diners.find((d) => d.key === k)?.name ?? k) + ":");
 
   return (
-    <article className={s.check} key={pick.id}>
-      <div className={s.checkPaper}>
-        <div className={s.checkHead}>
-          <span>
-            Table for {pick.friends.length}, {result.occasion === "meal" ? "a meal" : result.occasion}
-          </span>
-          <span className={s.checkNo}>No. {checkNo}</span>
-        </div>
-
-        <div className={s.venueRow}>
-          <h2 className={s.venue}>{pick.name}</h2>
+    <article className={s.board} key={pick.id}>
+      <div className={s.pickHero}>
+        <div className={s.pickArt}>
+          <Mosaic tiles={tiles} cols={6} className={s.pickMosaic} tileClass={s.pickTile} />
           {pick.image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              className={s.venueImg}
-              src={pick.image}
-              alt={`${pick.name}, photo from Qloo`}
-              width={96}
-              height={96}
-              loading="lazy"
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-              }}
-            />
+            <div className={s.pickPhoto}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img(pick.image, 840)}
+                alt={`${pick.name}, photo from Qloo`}
+                onError={(e) => {
+                  (e.currentTarget.parentElement as HTMLElement).style.display = "none";
+                }}
+              />
+            </div>
           )}
         </div>
-        <p className={s.venueMeta}>
-          {[pick.area, pick.rating ? `rated ${pick.rating}` : null].filter(Boolean).join(", ")}
-          {pick.address && (
-            <>
-              {" "}
-              <a href={mapsUrl(pick)} target="_blank" rel="noreferrer" className={s.mapLink}>
+
+        <div className={s.pickCopy}>
+          <p className={s.pickMeta}>
+            {result.occasion === "meal" ? "A meal" : result.occasion === "coffee" ? "Coffee" : "Dessert"} for {pick.friends.length}
+            {pick.area ? ` in ${pick.area}` : ""}
+            {pick.rating ? `, rated ${pick.rating}` : ""}
+          </p>
+          <h2 className={s.venue}>{pick.name}</h2>
+          {nar?.why && <p className={s.why}>{nar.why}</p>}
+          <div className={s.fairness}>
+            <div className={s.fairBar} aria-hidden>
+              {pick.friends.map((f) => (
+                <span key={f.key} style={{ flexGrow: f.fit, background: seat(dinerOf(f.key).index).color }} />
+              ))}
+            </div>
+            <p>
+              {pick.friends.length > 1
+                ? `Lowest fit is ${lowestDiner.name} at ${pct(lowest)}; the table averages ${pct(avg)}.`
+                : `Fits ${lowestDiner.name} at ${pct(lowest)}.`}
+            </p>
+          </div>
+          <div className={s.pickActions}>
+            {pick.address && (
+              <a href={mapsUrl(pick)} target="_blank" rel="noreferrer" className={s.btnPrimary}>
                 Open in Maps
               </a>
-            </>
-          )}
-        </p>
-        {nar?.why && <p className={s.why}>{nar.why}</p>}
-
-        <ol className={s.orders}>
-          {pick.friends.map((f, i) => (
-            <li key={f.key} className={s.order} style={{ ["--i" as string]: i }}>
-              <div className={s.orderLine}>
-                <span className={s.diner}>{names[f.key]}</span>
-                <span className={s.leader} aria-hidden />
-                <span className={s.dish}>{f.order?.dish ?? "Ask the staff"}</span>
-              </div>
-              <div className={s.orderSub}>
-                <span className={s.orderKind} data-kind={f.order?.kind ?? "none"}>
-                  {f.order?.kind === "taste_match"
-                    ? `Matches their lean towards ${f.order.matchedCuisine}`
-                    : f.order
-                      ? "House favourite, not a taste match"
-                      : "No highlight fits"}
-                </span>
-                <span className={s.fit}>
-                  <span className={s.fitBar} aria-hidden>
-                    <span style={{ width: pct(f.fit) }} />
-                  </span>
-                  <span className={s.fitNum}>fits {pct(f.fit)}</span>
-                </span>
-              </div>
-              {nar?.lines?.[f.key] && <p className={s.orderWhy}>{nar.lines[f.key]}</p>}
-            </li>
-          ))}
-        </ol>
-
-        <div className={s.total}>
-          <span>Table fit</span>
-          <span>
-            Lowest {pct(lowest)}
-            {lowestKey && pick.friends.length > 1 ? ` (${names[lowestKey]})` : ""}, average{" "}
-            {pct(pick.friends.reduce((a, f) => a + f.fit, 0) / pick.friends.length)}
-          </span>
+            )}
+            <button type="button" className={s.btnGhost} aria-expanded={open} onClick={() => setOpenId(open ? null : pick.id)}>
+              {open ? "Hide the evidence" : "Show the evidence"}
+            </button>
+          </div>
         </div>
-
-        <button type="button" className={s.evidenceBtn} aria-expanded={open} onClick={() => setOpenId(open ? null : pick.id)}>
-          {open ? "Hide the evidence" : "Show the evidence"}
-        </button>
-        {open && <Evidence result={result} pick={pick} names={names} />}
       </div>
+
+      <ol className={s.orders}>
+        {pick.friends.map((f, i) => {
+          const d = dinerOf(f.key);
+          const look = seat(d.index);
+          return (
+            <li key={f.key} className={s.order} style={{ ["--c" as string]: look.color, ["--on" as string]: look.on, ["--i" as string]: i }}>
+              <div className={s.orderTop}>
+                <Glyph shape={look.shape} color={look.on} size={20} />
+                <span className={s.orderName}>{d.name}</span>
+                <span className={s.orderFit}>fits {pct(f.fit)}</span>
+              </div>
+              <div className={s.orderLoves}>
+                {d.loves.slice(0, 3).map((c) => (
+                  <Thumb key={c.id} src={c.image} shape={look.shape} color={look.color} size={46} alt={c.name} />
+                ))}
+                <span className={s.orderLovesText}>{d.loves.map((c) => c.name).join(" + ")}</span>
+              </div>
+              <div className={s.dishStage}>
+                <span className={s.dishDisc} style={{ borderRadius: SHAPE_RADIUS[look.shape] }} aria-hidden />
+                <DishArt
+                  dish={f.order?.dish ?? "plate"}
+                  a={look.color === "var(--ink)" ? "var(--red)" : look.color}
+                  b={look.color === "var(--yellow)" ? "var(--blue)" : "var(--yellow)"}
+                  size={132}
+                  title={f.order ? `Illustration of ${f.order.dish}` : "Plate"}
+                />
+              </div>
+              <p className={s.dishName}>{f.order?.dish ?? "Ask the staff"}</p>
+              <p className={s.dishKind} data-kind={f.order?.kind ?? "none"}>
+                {f.order?.kind === "taste_match"
+                  ? `Matches their lean towards ${f.order.matchedCuisine}`
+                  : f.order
+                    ? "House favourite, not a taste match"
+                    : "No highlight fits"}
+                {d.veg ? ", vegetarian" : ""}
+              </p>
+              {nar?.lines?.[f.key] && <p className={s.orderWhy}>{nar.lines[f.key]}</p>}
+              <div className={s.meter} aria-hidden>
+                <span style={{ width: pct(f.fit) }} />
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {open && <Evidence result={result} pick={pick} diners={diners} steps={steps} named={named} />}
 
       {result.picks.length > 1 && (
         <div className={s.others}>
-          <h3 className={s.h3}>Also fits</h3>
+          <h3 className={s.h3}>Also fits the table</h3>
           <ul>
             {result.picks.map((p, i) =>
               i === active ? null : (
                 <li key={p.id}>
-                  <button type="button" className={s.otherBtn} onClick={() => setActive(i)}>
-                    <span className={s.otherName}>{p.name}</span>
-                    <span className={s.otherMeta}>
-                      {p.area ? `${p.area}, ` : ""}lowest fit {pct(Math.min(...p.friends.map((f) => f.fit)))}
+                  <button type="button" className={s.other} onClick={() => setActive(i)}>
+                    <span className={s.otherImg}>
+                      {p.image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={img(p.image)} alt="" loading="lazy" />
+                      ) : (
+                        <Glyph shape="arch" color="var(--blue)" size={40} />
+                      )}
+                    </span>
+                    <span className={s.otherText}>
+                      <span className={s.otherName}>{p.name}</span>
+                      <span className={s.otherMeta}>
+                        {p.area ? `${p.area}. ` : ""}Lowest fit {pct(Math.min(...p.friends.map((f) => f.fit)))}
+                      </span>
+                    </span>
+                    <span className={s.otherDishes} aria-hidden>
+                      {p.friends.slice(0, 3).map((f) =>
+                        f.order ? <DishArt key={f.key} dish={f.order.dish} a="var(--red)" b="var(--yellow)" size={34} title="" /> : null,
+                      )}
                     </span>
                   </button>
                 </li>
@@ -760,30 +904,47 @@ function Check({
   );
 }
 
-function Evidence({ result, pick, names }: { result: Result; pick: Pick; names: Record<string, string> }) {
+function Evidence({
+  result,
+  pick,
+  diners,
+  steps,
+  named,
+}: {
+  result: Result;
+  pick: Pick;
+  diners: Diner[];
+  steps: Step[];
+  named: (t: string) => string;
+}) {
   return (
     <div className={s.evidence}>
-      <p className={s.evNote}>
-        Everything below came back from Qloo for this request. Affinities describe groups with similar taste, not a
-        prediction about any one of you.
-      </p>
+      <div className={s.evIntro}>
+        <h3 className={s.h3}>The evidence</h3>
+        <p>
+          Everything here came back from Qloo for this request. Affinities describe groups with similar taste, not a
+          prediction about any one of you.
+        </p>
+        <StepList steps={steps} named={named} />
+      </div>
       <dl className={s.evList}>
         {result.profiles.map((p) => {
           const f = pick.friends.find((x) => x.key === p.key)!;
+          const d = diners.find((x) => x.key === p.key)!;
           return (
-            <div key={p.key} className={s.evRow}>
-              <dt>{names[p.key]}</dt>
+            <div key={p.key} className={s.evRow} style={{ ["--c" as string]: seat(d.index).color }}>
+              <dt>{d.name}</dt>
               <dd>
                 <p>
-                  <span className={s.evK}>Leans</span> {p.cuisines.slice(0, 4).map((t) => `${t.name} ${t.affinity.toFixed(2)}`).join(", ") || "no cuisine signal"}
+                  <b>Leans</b> {p.cuisines.slice(0, 4).map((t) => `${t.name} ${t.affinity.toFixed(2)}`).join(", ") || "no cuisine signal"}
                 </p>
                 <p>
-                  <span className={s.evK}>Rooms</span> {p.ambience.slice(0, 4).map((t) => `${t.name} ${t.affinity.toFixed(2)}`).join(", ") || "no ambience signal"}
+                  <b>Rooms</b> {p.ambience.slice(0, 4).map((t) => `${t.name} ${t.affinity.toFixed(2)}`).join(", ") || "no ambience signal"}
                 </p>
                 <p>
-                  <span className={s.evK}>Matched here</span> {f.matched.map((m) => m.name).join(", ") || "nothing directly"}
-                  {"; "}their loves drove {pct(f.share)} of Qloo&rsquo;s score for this venue
-                  {f.vegNote === "no_veg" ? "; nothing vegetarian on the highlights" : f.vegNote === "veg_friendly" ? "; tagged vegetarian-friendly" : ""}
+                  <b>Matched here</b> {f.matched.map((m) => m.name).join(", ") || "nothing directly"}. Their loves drove{" "}
+                  {pct(f.share)} of Qloo&rsquo;s score for this venue
+                  {f.vegNote === "no_veg" ? "; nothing vegetarian on the highlights" : f.vegNote === "veg_friendly" ? "; tagged vegetarian-friendly" : ""}.
                 </p>
               </dd>
             </div>
@@ -793,21 +954,21 @@ function Evidence({ result, pick, names }: { result: Result; pick: Pick; names: 
           <dt>The venue</dt>
           <dd>
             <p>
-              <span className={s.evK}>Qloo affinity</span> {pick.qlooAffinity.toFixed(3)}
+              <b>Qloo affinity</b> {pick.qlooAffinity.toFixed(3)}
             </p>
             {pick.vibe.length > 0 && (
               <p>
-                <span className={s.evK}>Room</span> {pick.vibe.join(", ")}
+                <b>Room</b> {pick.vibe.join(", ")}
               </p>
             )}
             {pick.cuisines.length > 0 && (
               <p>
-                <span className={s.evK}>Cuisines</span> {pick.cuisines.join(", ")}
+                <b>Cuisines</b> {pick.cuisines.join(", ")}
               </p>
             )}
             {pick.menu.length > 0 && (
               <p>
-                <span className={s.evK}>Menu highlights</span> {pick.menu.join(", ")}
+                <b>Menu highlights</b> {pick.menu.join(", ")}
               </p>
             )}
           </dd>
@@ -821,8 +982,8 @@ function Evidence({ result, pick, names }: { result: Result; pick: Pick; names: 
             </p>
             {result.rejected.length > 0 && (
               <p>
-                <span className={s.evK}>Set aside</span> {result.rejected.map((r) => r.name).join(", ")}: no cuisine or menu
-                data, so possibly not food venues.
+                <b>Set aside</b> {result.rejected.map((r) => r.name).join(", ")}: no cuisine or menu data, so possibly not
+                food venues.
               </p>
             )}
             {result.relaxations.map((r) => (
@@ -836,32 +997,59 @@ function Evidence({ result, pick, names }: { result: Result; pick: Pick; names: 
 }
 
 function HowItDecides() {
+  const steps = [
+    {
+      t: "It checks what you meant",
+      p: "Each love is looked up in Qloo. When a name could be two things, like Dune the film and Dune the band, Sapor asks, because they draw different crowds.",
+      shape: "circle" as const,
+      c: "var(--yellow)",
+      n: "var(--ink)",
+    },
+    {
+      t: "It reads each person's taste",
+      p: "Qloo returns the cuisines and rooms people who share those loves tend to favour. BTS and Squid Game fans lean Korean and like hip rooms.",
+      shape: "arch" as const,
+      c: "var(--blue)",
+      n: "var(--paper)",
+    },
+    {
+      t: "It searches real places",
+      p: "Qloo finds venues where you are, with everyone's loves as signals. Places with no menu data are set aside, and the search widens if too few are left.",
+      shape: "square" as const,
+      c: "var(--pink)",
+      n: "var(--ink)",
+    },
+    {
+      t: "Nobody is left out",
+      p: "Every venue is scored for every person against its own Qloo tags. The lowest score counts as much as the average.",
+      shape: "leaf" as const,
+      c: "var(--green)",
+      n: "var(--paper)",
+    },
+    {
+      t: "It writes each order",
+      p: "Menu highlights are matched to each person's cuisines. Vegetarians only get vegetarian dishes, and a house favourite is labelled as one.",
+      shape: "quarter" as const,
+      c: "var(--paper)",
+      n: "var(--ink)",
+    },
+  ];
   return (
     <section id="how" className={s.how} aria-labelledby="how-h">
-      <h2 id="how-h" className={s.h2}>
+      <h2 id="how-h" className={s.howTitle}>
         How Sapor decides
       </h2>
       <ol className={s.howList}>
-        <li>
-          <h3 className={s.h3}>It checks what you meant</h3>
-          <p>Each love is looked up in Qloo. When a name could be two different things, like Dune the film and Dune the band, Sapor asks rather than guesses, because the two draw different crowds.</p>
-        </li>
-        <li>
-          <h3 className={s.h3}>It reads the taste behind each person</h3>
-          <p>Qloo returns the cuisines and kinds of rooms that people who share those loves tend to favour. BTS and Squid Game fans lean Korean and Thai and like hip rooms; A. R. Rahman fans lean Indian.</p>
-        </li>
-        <li>
-          <h3 className={s.h3}>It searches real places nearby</h3>
-          <p>Qloo finds venues in your area with everyone&rsquo;s loves as signals. Places with no menu data are set aside, and the search widens step by step if too few are left.</p>
-        </li>
-        <li>
-          <h3 className={s.h3}>It makes sure nobody is left out</h3>
-          <p>Every venue is scored for every person against its own Qloo tags. The ranking weighs the lowest score as much as the average, so one happy person can&rsquo;t carry a bad pick.</p>
-        </li>
-        <li>
-          <h3 className={s.h3}>It writes each order</h3>
-          <p>Sapor matches the venue&rsquo;s menu highlights to each person&rsquo;s cuisines, respects vegetarians, and says plainly when a dish is a house favourite rather than a taste match.</p>
-        </li>
+        {steps.map((x, i) => (
+          <li key={x.t}>
+            <span className={s.howMark} style={{ ["--n" as string]: x.n }}>
+              <Glyph shape={x.shape} color={x.c} size={54} />
+              <span>{i + 1}</span>
+            </span>
+            <h3 className={s.h3}>{x.t}</h3>
+            <p>{x.p}</p>
+          </li>
+        ))}
       </ol>
     </section>
   );

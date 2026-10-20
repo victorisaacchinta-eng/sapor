@@ -1,13 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces } from "next/font/google";
 import "./globals.css";
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  axes: ["SOFT", "WONK", "opsz"],
-  variable: "--font-fraunces",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Sapor, a taste agent for your table",
@@ -16,16 +8,19 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#E3EBE1",
+  themeColor: "#f3ecdd",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en-GB" className={fraunces.variable}>
+    <html lang="en-GB">
       <head>
-        <link rel="preconnect" href="https://api.fontshare.com" />
-        {/* Switzer by Indian Type Foundry, free for commercial use via Fontshare */}
-        <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap" />
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
+        {/* Clash Display and Satoshi by Indian Type Foundry, free for commercial use via Fontshare */}
+        <link
+          rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=clash-display@500,600,700&f[]=satoshi@400,500,700,900&display=swap"
+        />
       </head>
       <body>{children}</body>
     </html>

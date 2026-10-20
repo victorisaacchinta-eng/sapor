@@ -1,27 +1,31 @@
 :root {
-  --celadon: #e3ebe1;
-  --celadon-deep: #d3e0d4;
-  --ink: #14302a;
-  --ink-2: #3d5a51;
-  --ink-3: #5f7a71;
-  --rule: #9dbfae;
-  --rule-soft: #c4d8cb;
-  --paper: #f8faf5;
-  --red: #c42f28;
-  --focus: #c42f28;
+  /* Bauhaus field: bone paper, ink, and four flat colours */
+  --bone: #f3ecdd;
+  --bone-2: #e9dfca;
+  --paper: #fbf7ee;
+  --ink: #17130f;
+  --ink-2: #4a4239;
+  --ink-3: #776c5f;
+  --red: #e2452b;
+  --yellow: #f4b42a;
+  --blue: #2c4bc4;
+  --green: #1e6b4f;
+  --pink: #f2a69b;
+  --focus: #2c4bc4;
 
-  --sans: "Switzer", ui-sans-serif, sans-serif;
-  --serif: var(--font-fraunces), Georgia, serif;
+  --display: "Clash Display", "Satoshi", ui-sans-serif, sans-serif;
+  --sans: "Satoshi", ui-sans-serif, sans-serif;
 
-  /* type scale, roughly a major third */
   --t-xs: 0.8rem;
   --t-sm: 0.9rem;
   --t-md: 1rem;
   --t-lg: 1.25rem;
-  --t-xl: 1.563rem;
-  --t-2xl: 1.953rem;
+  --t-xl: 1.6rem;
+  --t-2xl: 2.2rem;
 
-  --gutter: clamp(16px, 4vw, 48px);
+  --line: 3px;
+  --gutter: clamp(16px, 4vw, 56px);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -35,12 +39,13 @@ html {
 
 body {
   margin: 0;
-  background: var(--celadon);
+  background: var(--bone);
   color: var(--ink);
   font-family: var(--sans);
   font-size: var(--t-md);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 button,
@@ -50,14 +55,19 @@ textarea {
   color: inherit;
 }
 
+img {
+  display: block;
+  max-width: 100%;
+}
+
 :focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
 }
 
 ::selection {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--yellow);
+  color: var(--ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
