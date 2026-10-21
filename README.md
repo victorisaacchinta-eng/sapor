@@ -8,6 +8,10 @@
 
 Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/), October 2026.
 
+[![Watch the 35-second Sapor launch film](media/sapor-launch-poster.jpg)](media/sapor-launch.mp4)
+
+**[Watch the launch film](media/sapor-launch.mp4)** (35 s, 1080p60, sound on). One continuous take of the real app running the sample table.
+
 ---
 
 ## The problem
