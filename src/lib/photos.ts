@@ -293,7 +293,51 @@ const HERO_VEG = ["paneer", "tofu", "halloumi", "mushroom", "jackfruit", "falafe
 
 const NONVEG_DISH = /\b(chicken|mutton|lamb|fish|prawn|prawns|shrimp|beef|pork|bacon|ham|egg|eggs|keema|turkey|duck|salmon|tuna|meat)\b/i;
 
+/**
+ * Photos checked by eye for the dishes the demo and landing page always show, so
+ * they never depend on the search quota (Unsplash Demo: 50 searches an hour) and
+ * never land on a poor match. All free under the Unsplash License, hotlinked and
+ * credited like every other photo.
+ */
+type Pin = { pid: string; page: string; by: string; handle: string; alt: string; match: "exact" | "similar"; anchor: string };
+const PINS: Record<string, Pin> = {
+  "korean chicken bao": { pid: "1726595453320-8751f0676aae", page: "a-close-up-of-food-on-a-wooden-board-sxtOSxaSnGU", by: "Onur Kaya", handle: "kayaartsss", alt: "Crispy filled bao buns on a wooden board", match: "similar", anchor: "crispy bao buns" },
+  "paneer korean bao": { pid: "1632996988640-e66f755e389b", page: "a-close-up-of-a-tray-of-food-on-a-table-h3tHW344BHM", by: "Shivansh Sethi", handle: "kaaficlever", alt: "Crispy mushroom bao buns with spring onion", match: "similar", anchor: "a crispy mushroom bao" },
+  "pav bhaji bruschetta": { pid: "1753357303396-704b5abe8945", page: "pav-bhaji-a-popular-indian-street-food-is-ready-QOvGLUTeOx0", by: "Pavan Reddy", handle: "pavan_09", alt: "Pav bhaji, a popular Indian street food", match: "similar", anchor: "pav bhaji" },
+  "pav bhaji": { pid: "1753357303396-704b5abe8945", page: "pav-bhaji-a-popular-indian-street-food-is-ready-QOvGLUTeOx0", by: "Pavan Reddy", handle: "pavan_09", alt: "Pav bhaji, a popular Indian street food", match: "exact", anchor: "pav bhaji" },
+  "bao bun": { pid: "1781785164696-0154e4dd70c1", page: "savory-steamed-bao-bun-with-meat-herbs-and-crumbly-topping-MGUQUgl55ik", by: "Sandie Clarke", handle: "honeypoppet", alt: "Savory steamed bao bun with herbs and crumbly topping", match: "exact", anchor: "bao bun" },
+  "masala dosa": { pid: "1668236543090-82eba5ee5976", page: "dosa-with-masala-and-chutney-breakfast-5oF7d_hPJG4", by: "Paul", handle: "paul19977", alt: "A crispy dosa served with potato masala, sambar and chutneys", match: "exact", anchor: "masala dosa" },
+  cappuccino: { pid: "1512568400610-62da28bc8a13", page: "top-view-photography-of-heart-latte-coffee-XOhI_kW_TaM", by: "Nathan Dumlao", handle: "nate_dumlao", alt: "Cappuccino with latte art on coffee beans", match: "exact", anchor: "cappuccino" },
+  tiramisu: { pid: "1724116379273-ba32b70d112c", page: "a-piece-of-cake-sitting-on-top-of-a-white-plate-d-Mx494kXAg", by: "Gina's Auckland", handle: "ginasauckland", alt: "A slice of tiramisu on a white plate", match: "exact", anchor: "tiramisu" },
+  cheesecake: { pid: "1676300185983-d5f242babe34", page: "a-piece-of-cheesecake-on-a-plate-next-to-a-cup-of-coffee-7yhu6txevQA", by: "Orkun Orcan", handle: "orkunorcan", alt: "A piece of cheesecake next to a cup of coffee", match: "exact", anchor: "cheesecake" },
+};
+
+const REF = "utm_source=sapor&utm_medium=referral";
+function pinned(n: string): DishPhoto | null {
+  const p = PINS[n];
+  if (!p) return null;
+  const img = (w: number, h: number) => `https://images.unsplash.com/photo-${p.pid}?ixlib=rb-4.1.0&w=${w}&h=${h}&fit=crop&crop=entropy&auto=format&q=75`;
+  const id = p.page.split("-").pop()!;
+  if (UNSPLASH() && !tracked.has(id)) {
+    tracked.add(id);
+    void getJSON(`https://api.unsplash.com/photos/${id}/download`, { Authorization: `Client-ID ${UNSPLASH()}`, "Accept-Version": "v1" });
+  }
+  return {
+    src: img(600, 600),
+    srcWide: img(1200, 800),
+    alt: p.alt,
+    photographer: p.by,
+    photographerUrl: `https://unsplash.com/@${p.handle}?${REF}`,
+    photoUrl: `https://unsplash.com/photos/${p.page}?${REF}`,
+    source: "Unsplash",
+    match: p.match,
+    anchor: p.anchor,
+  };
+}
+
 export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
+  const pin = pinned(analyseDish(dish).n);
+  if (pin) return pin;
   if (!photosEnabled()) return null;
   const { n, anchor, tokens, modifiers } = analyseDish(dish);
   if (!n) return null;
