@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import s from "./sapor.module.css";
 import { Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
 import { FortuneBadge, Intro, Ticker, WorkingQuip } from "./Flavour";
+import SmoothScroll from "./SmoothScroll";
 
 /* ------------------------------------------------------------------ */
 /* Types mirrored from the server                                      */
@@ -334,6 +335,7 @@ export default function Sapor() {
 
   return (
     <div className={s.page}>
+      <SmoothScroll />
       <Intro />
       <FortuneBadge />
       <header className={s.masthead}>

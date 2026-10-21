@@ -1620,3 +1620,98 @@
 .footer a {
   color: var(--bone);
 }
+
+
+/* ---------------------------------------------------------------- */
+/* Scroll-driven moments (progressive: browsers without scroll       */
+/* timelines simply skip them; reduced motion skips them too)        */
+/* ---------------------------------------------------------------- */
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* the hero mosaic drifts and tilts away as you scroll past it */
+    .heroGrid {
+      animation: heroDrift linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 100vh;
+    }
+
+    @keyframes heroDrift {
+      to {
+        transform: translateY(14%) rotate(-4deg) scale(1.1);
+      }
+    }
+
+    /* seat cards settle onto the table like cards being dealt */
+    .seat,
+    .addSeat {
+      animation: dealIn linear both;
+      animation-timeline: view();
+      animation-range: entry 5% entry 70%;
+    }
+
+    .seat:nth-child(2n) {
+      --tilt: 3deg;
+    }
+
+    @keyframes dealIn {
+      from {
+        opacity: 0;
+        transform: translateY(60px) rotate(var(--tilt, -3deg)) scale(0.96);
+      }
+    }
+
+    /* the plan bar slides in from the side */
+    .planBar {
+      animation: barIn linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+
+    @keyframes barIn {
+      from {
+        transform: translateX(-6%);
+        box-shadow: 0 0 0 var(--ink);
+      }
+    }
+
+    /* the title travels with the scroll; the shapes roll into place */
+    .howTitle {
+      animation: titleTravel linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 45%;
+    }
+
+    @keyframes titleTravel {
+      from {
+        transform: translateX(-14%);
+        opacity: 0.2;
+      }
+    }
+
+    .howMark svg {
+      animation: rollIn linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 35%;
+    }
+
+    @keyframes rollIn {
+      from {
+        transform: rotate(-200deg) scale(0.2);
+      }
+    }
+
+    .howList li:nth-child(2) .howMark svg {
+      animation-range: entry 16% cover 39%;
+    }
+    .howList li:nth-child(3) .howMark svg {
+      animation-range: entry 22% cover 43%;
+    }
+    .howList li:nth-child(4) .howMark svg {
+      animation-range: entry 28% cover 47%;
+    }
+    .howList li:nth-child(5) .howMark svg {
+      animation-range: entry 34% cover 51%;
+    }
+  }
+}
