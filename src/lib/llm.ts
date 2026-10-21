@@ -45,7 +45,7 @@ type Msg = { role: "system" | "user"; content: string };
 async function completeJSON<T>(messages: Msg[], maxTokens = 900): Promise<{ data: T; provider: string } | null> {
   for (const p of providers()) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15_000);
+    const timer = setTimeout(() => ctrl.abort(), 12_000);
     try {
       const res = await fetch(p.url, {
         method: "POST",
@@ -56,6 +56,8 @@ async function completeJSON<T>(messages: Msg[], maxTokens = 900): Promise<{ data
           temperature: 0.4,
           max_tokens: maxTokens,
           response_format: { type: "json_object" },
+          // gpt-oss on Groq reasons before answering; keep it short to stay inside the free token budget
+          ...(p.name === "groq" ? { reasoning_effort: "low" } : {}),
         }),
         signal: ctrl.signal,
       });
@@ -85,7 +87,11 @@ function extractJSON(text: string): unknown | null {
 
 /** House style: no em dashes in anything Sapor says. */
 export function clean(s: string) {
-  return s.replace(/\s*[—–]\s*/g, ", ").replace(/\s+,/g, ",").trim();
+  return s
+    .replace(/[‐‑‒]/g, "-")
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/\s+,/g, ",")
+    .trim();
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import s from "./sapor.module.css";
-import { DishArt, Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
+import { Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
 
 /* ------------------------------------------------------------------ */
 /* Types mirrored from the server                                      */
@@ -93,10 +93,10 @@ const ASK_LABEL: Record<string, string> = {
   podcast: "The podcast",
   videogame: "The game",
 };
-const OCCASIONS: { id: Occasion; label: string; art: string }[] = [
-  { id: "coffee", label: "Coffee", art: "cappuccino" },
-  { id: "meal", label: "A meal", art: "biryani" },
-  { id: "dessert", label: "Dessert", art: "cake" },
+const OCCASIONS: { id: Occasion; label: string; art: string; shape: "circle" | "arch" | "square" }[] = [
+  { id: "coffee", label: "Coffee", art: "cappuccino", shape: "circle" },
+  { id: "meal", label: "A meal", art: "chicken biryani", shape: "arch" },
+  { id: "dessert", label: "Dessert", art: "cheesecake", shape: "square" },
 ];
 const PLACES = ["Jubilee Hills, Hyderabad", "Banjara Hills, Hyderabad", "Gachibowli, Hyderabad", "Indiranagar, Bengaluru", "Bandra, Mumbai", "Brooklyn, New York"];
 
@@ -145,11 +145,14 @@ const SAMPLE: Seat[] = [
 ];
 
 const HERO_TILES = makeMosaic(20261021, 20);
-const HERO_DISHES: Record<number, { dish: string; a: string; b: string }> = {
-  2: { dish: "bao", a: "var(--red)", b: "var(--green)" },
-  9: { dish: "masala chai", a: "var(--yellow)", b: "var(--red)" },
-  13: { dish: "masala dosa", a: "var(--green)", b: "var(--red)" },
-  16: { dish: "cappuccino", a: "var(--blue)", b: "var(--yellow)" },
+/** Hero tiles that show a real dish photo (looked up once, cached at the edge). */
+const HERO_DISHES: Record<number, string> = {
+  2: "bao bun",
+  5: "pav bhaji",
+  9: "masala chai",
+  13: "masala dosa",
+  16: "cappuccino",
+  19: "tiramisu",
 };
 
 /* ------------------------------------------------------------------ */
@@ -369,13 +372,7 @@ export default function Sapor() {
           <div className={s.heroGrid}>
             {HERO_TILES.map((t, i) => (
               <div key={i} className={s.heroTile} style={{ ["--d" as string]: `${t.delay}ms` }}>
-                {HERO_DISHES[i] ? (
-                  <div className={s.heroDish}>
-                    <DishArt dish={HERO_DISHES[i].dish} a={HERO_DISHES[i].a} b={HERO_DISHES[i].b} size={120} title="" />
-                  </div>
-                ) : (
-                  <Tile {...t} />
-                )}
+                {HERO_DISHES[i] ? <PhotoTile dish={HERO_DISHES[i]} fallback={<Tile {...t} />} /> : <Tile {...t} />}
               </div>
             ))}
           </div>
@@ -453,7 +450,9 @@ export default function Sapor() {
               {OCCASIONS.map((o, i) => (
                 <label key={o.id} className={s.occasion} data-on={occasion === o.id}>
                   <input type="radio" name="occasion" value={o.id} checked={occasion === o.id} onChange={() => setOccasion(o.id)} />
-                  <DishArt dish={o.art} a={["var(--red)", "var(--green)", "var(--blue)"][i]} b="var(--yellow)" size={44} title="" />
+                  <span className={s.occasionPic} style={{ borderRadius: SHAPE_RADIUS[o.shape] }} aria-hidden>
+                    <PhotoTile dish={o.art} fallback={<Glyph shape={o.shape} color={["var(--red)", "var(--green)", "var(--blue)"][i]} size={30} />} />
+                  </span>
                   <span>{o.label}</span>
                 </label>
               ))}
@@ -512,8 +511,11 @@ export default function Sapor() {
           </p>
           <p>
             Taste data, venues, tags, menu highlights and images come from Qloo&rsquo;s taste graph. Qloo describes what
-            people with similar taste tend to like, not what any one person will do. Dish-to-cuisine matching and every
-            illustration are Sapor&rsquo;s own.
+            people with similar taste tend to like, not what any one person will do. Food photos come from{" "}
+            <a href="https://unsplash.com/?utm_source=sapor&utm_medium=referral" target="_blank" rel="noreferrer">
+              Unsplash
+            </a>{" "}
+            and are credited to each photographer. Dish-to-cuisine matching and the illustrations are Sapor&rsquo;s own.
           </p>
           <p>Built by Victor Isaac for the Qloo Agentic Hackathon, 2026. Open source under MIT.</p>
         </div>
@@ -523,6 +525,99 @@ export default function Sapor() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Real food photos (Pexels, via our server)                           */
+/* ------------------------------------------------------------------ */
+
+type DishPhotoData = {
+  src: string;
+  srcWide: string;
+  alt: string;
+  avgColor?: string;
+  photographer: string;
+  photographerUrl: string;
+  photoUrl: string;
+  source: "Unsplash" | "Pexels";
+  match: "exact" | "similar";
+  anchor: string;
+};
+
+const photoRequests = new Map<string, Promise<DishPhotoData | null>>();
+function loadPhoto(dish: string) {
+  const k = dish.trim().toLowerCase();
+  let p = photoRequests.get(k);
+  if (!p) {
+    p = fetch(`/api/dish-photo?d=${encodeURIComponent(dish)}`)
+      .then((r) => (r.ok ? r.json() : { photo: null }))
+      .then((j: { photo: DishPhotoData | null }) => j.photo)
+      .catch(() => null);
+    photoRequests.set(k, p);
+  }
+  return p;
+}
+
+function usePhoto(dish?: string) {
+  const [state, setState] = useState<{ dish?: string; photo: DishPhotoData | null; done: boolean }>({ photo: null, done: false });
+  useEffect(() => {
+    if (!dish) return;
+    let live = true;
+    loadPhoto(dish).then((photo) => live && setState({ dish, photo, done: true }));
+    return () => {
+      live = false;
+    };
+  }, [dish]);
+  return state.dish === dish ? state : { photo: null, done: !dish };
+}
+
+function DishPhoto({ dish, shape, color }: { dish?: string; shape: keyof typeof SHAPE_RADIUS; color: string }) {
+  const { photo, done } = usePhoto(dish);
+  const [loaded, setLoaded] = useState<string | null>(null);
+  const radius = SHAPE_RADIUS[shape];
+  return (
+    <figure className={s.dishFigure}>
+      <div className={s.dishFrame}>
+        <span className={s.dishBlock} style={{ borderRadius: radius }} aria-hidden />
+        <div className={s.dishPhoto} style={{ borderRadius: radius, background: photo?.avgColor ?? "var(--bone-2)" }} data-loading={!done || (photo && loaded !== photo.src) ? "true" : undefined}>
+          {photo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={photo.src} alt={photo.alt || dish || ""} loading="lazy" onLoad={() => setLoaded(photo.src)} data-ready={loaded === photo.src} />
+          ) : done ? (
+            <span className={s.dishType} style={{ color }}>
+              {dish ?? "Ask the staff"}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      {photo && (
+        <figcaption className={s.credit}>
+          {photo.match === "similar" ? `Shows ${photo.anchor}, a close match. ` : ""}
+          Photo by{" "}
+          <a href={photo.photographerUrl} target="_blank" rel="noreferrer">
+            {photo.photographer}
+          </a>{" "}
+          on{" "}
+          <a href={photo.photoUrl} target="_blank" rel="noreferrer">
+            {photo.source}
+          </a>
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
+function PhotoTile({ dish, fallback, wide }: { dish: string; fallback: React.ReactNode; wide?: boolean }) {
+  const { photo, done } = usePhoto(dish);
+  if (done && !photo) return <>{fallback}</>;
+  return (
+    <div className={s.photoTile} style={{ background: photo?.avgColor ?? "var(--bone-2)" }}>
+      {photo && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={wide ? photo.srcWide : photo.src} alt="" loading="lazy" />
+      )}
+    </div>
+  );
+}
 
 function Thumb({ src, shape, color, size = 52, alt }: { src?: string; shape: keyof typeof SHAPE_RADIUS; color: string; size?: number; alt: string }) {
   const [failed, setFailed] = useState(false);
@@ -836,16 +931,7 @@ function Pickboard({
                 ))}
                 <span className={s.orderLovesText}>{d.loves.map((c) => c.name).join(" + ")}</span>
               </div>
-              <div className={s.dishStage}>
-                <span className={s.dishDisc} style={{ borderRadius: SHAPE_RADIUS[look.shape] }} aria-hidden />
-                <DishArt
-                  dish={f.order?.dish ?? "plate"}
-                  a={look.color === "var(--ink)" ? "var(--red)" : look.color}
-                  b={look.color === "var(--yellow)" ? "var(--blue)" : "var(--yellow)"}
-                  size={132}
-                  title={f.order ? `Illustration of ${f.order.dish}` : "Plate"}
-                />
-              </div>
+              <DishPhoto dish={f.order?.dish} shape={look.shape} color={look.color} />
               <p className={s.dishName}>{f.order?.dish ?? "Ask the staff"}</p>
               <p className={s.dishKind} data-kind={f.order?.kind ?? "none"}>
                 {f.order?.kind === "taste_match"
@@ -890,7 +976,11 @@ function Pickboard({
                     </span>
                     <span className={s.otherDishes} aria-hidden>
                       {p.friends.slice(0, 3).map((f) =>
-                        f.order ? <DishArt key={f.key} dish={f.order.dish} a="var(--red)" b="var(--yellow)" size={34} title="" /> : null,
+                        f.order ? (
+                          <span key={f.key} className={s.otherDish}>
+                            <PhotoTile dish={f.order.dish} fallback={<Glyph shape="circle" color={seat(dinerOf(f.key).index).color} size={20} />} />
+                          </span>
+                        ) : null,
                       )}
                     </span>
                   </button>

@@ -26,7 +26,7 @@ People are bad at describing their food taste in the abstract, but they are very
 
 ### What you see
 
-Every love shows Qloo's own image for it (the poster, the album art, the artist), cropped into that person's shape. Every venue shows Qloo's photo of it. Every dish is drawn: Sapor has its own set of original Bauhaus-style illustrations (bao, dosa, biryani, chai, pizza and twenty more), picked by the dish name. The table's mosaic is built from each person's colour in proportion to how well the place fits them.
+Every love shows Qloo's own image for it (the poster, the album art, the artist), cropped into that person's shape. Every venue shows Qloo's photo of it. Every dish gets a real photo from Unsplash (free licence, commercial use, no watermark), credited to its photographer. Sapor only accepts a photo whose own description names the dish, prefers named dishes ("pav bhaji bruschetta" is shown as pav bhaji), and says "a close match" when it falls back to the dish type. The table's mosaic is built from each person's colour in proportion to how well the place fits them.
 
 ### Why this needs Qloo
 
@@ -69,7 +69,7 @@ cp .env.example .env.local      # then put your key in .env.local
 npm run dev                      # http://localhost:3000
 ```
 
-`QLOO_API_KEY` is the only required value. The language layer is optional: set `GEMINI_API_KEY` (free tier from Google AI Studio; the hosted demo uses `gemini-flash-lite-latest`) or `GROQ_API_KEY`. Without one, Sapor still parses "Name: thing, thing" input with simple rules and writes its explanations from templates.
+`QLOO_API_KEY` is the only required value. Set `UNSPLASH_ACCESS_KEY` for food photos; without it, dishes are shown by name. The language layer is optional: set `GEMINI_API_KEY` (free tier from Google AI Studio; the hosted demo uses `gemini-flash-lite-latest`) or `GROQ_API_KEY`. Without one, Sapor still parses "Name: thing, thing" input with simple rules and writes its explanations from templates.
 
 To deploy, import the repo into Vercel and add the same environment variables. Every Qloo call happens in server routes (`src/app/api/*`); the key never reaches the browser.
 
@@ -96,6 +96,6 @@ src/components/      the interface; art.tsx holds the mosaic, seat shapes and di
 
 ## Credits
 
-Taste data, venue photos and entity images: [Qloo](https://www.qloo.com/) Taste AI. Type: Clash Display and Satoshi (Indian Type Foundry, Fontshare licence). Illustrations: original, drawn in code for Sapor.
+Taste data, venue photos and entity images: [Qloo](https://www.qloo.com/) Taste AI. Type: Clash Display and Satoshi (Indian Type Foundry, Fontshare licence). Food photos: [Unsplash](https://unsplash.com/?utm_source=sapor&utm_medium=referral) photographers, credited on each photo. Shapes and mosaic: original, drawn in code for Sapor.
 
 MIT licensed. Built by Victor Isaac.
