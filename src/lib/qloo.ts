@@ -165,6 +165,7 @@ export type QlooEntity = {
   tags?: QlooTag[];
   query?: {
     affinity?: number;
+    distance?: number;
     explainability?: { "signal.interests.entities"?: { entity_id: string; score: number }[] };
   };
 };

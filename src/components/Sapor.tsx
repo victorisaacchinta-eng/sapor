@@ -5,6 +5,10 @@ import s from "./sapor.module.css";
 import { Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
 import { FortuneBadge, Intro, Ticker, WorkingQuip } from "./Flavour";
 import SmoothScroll from "./SmoothScroll";
+import { costLine, directionsUrl, distanceLine, PlaceActions, PlaceFacts, type Here } from "./PlaceFacts";
+import pf from "./place.module.css";
+import { isVeg } from "@/lib/dishes";
+import type { PlaceDetails } from "@/lib/agent";
 
 /* ------------------------------------------------------------------ */
 /* Types mirrored from the server                                      */
@@ -43,6 +47,10 @@ type Pick = {
   address?: string;
   image?: string;
   rating?: number;
+  priceLevel?: number | null;
+  lat?: number;
+  lon?: number;
+  details?: PlaceDetails;
   qlooAffinity: number;
   tableScore: number;
   fairness: number;
@@ -106,8 +114,17 @@ const PLACES = ["Jubilee Hills, Hyderabad", "Banjara Hills, Hyderabad", "Gachibo
 const img = (u?: string, w = 240) => (u ? `/api/img?u=${encodeURIComponent(u.replace(/-\d+x-(auto|outside)/, `-${w}x-$1`))}` : undefined);
 const qimg = (id: string) => `https://images.qloo.com/i/${id}-420x-auto.jpg`;
 const pct = (n: number) => `${Math.round(n * 100)}%`;
-const mapsUrl = (p: Pick) =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([p.name, p.address].filter(Boolean).join(", "))}`;
+
+/** how many of the venue's reviews name this dish, from Qloo's review keywords */
+const reviewMentions = (pick: Pick, dish?: string) => {
+  if (!dish) return 0;
+  const d = dish.toLowerCase();
+  const hit = pick.details?.reviewWords?.find((w) => {
+    const n = w.name.toLowerCase();
+    return n.length > 4 && (n === d || d.includes(n) || n.includes(d));
+  });
+  return hit?.count ?? 0;
+};
 
 const emptySeat = (): Seat => ({ uid: uid(), name: "", veg: false, loves: [], draft: "" });
 const resolvedLove = (c: Candidate): Love => ({ uid: uid(), text: c.name, status: "resolved", chosen: c });
@@ -885,7 +902,22 @@ function Pickboard({
     pick.friends.map((f) => ({ color: seat(dinerOf(f.key).index).color, weight: f.fit })),
     30,
   );
-  const named = (t: string) => t.replace(/\b([A-F]):/g, (m, k: string) => (diners.find((d) => d.key === k)?.name ?? k) + ":");
+  const named = (t: string) =>
+    t
+      .replace(/\b([A-F]):/g, (m, k: string) => (diners.find((d) => d.key === k)?.name ?? k) + ":")
+      .replace(/\b(?:friend|person|guest|diner|seat|member)\s+([A-F])\b/gi, (m, k: string) => diners.find((d) => d.key === k.toUpperCase())?.name ?? m);
+  const [here, setHere] = useState<Here>(null);
+  const ordered = new Set(pick.friends.map((f) => f.order?.dish).filter(Boolean) as string[]);
+  const cost = costLine(pick);
+  const shareText = [
+    `Sapor picked ${pick.name}${pick.area ? `, ${pick.area}` : ""} for us.`,
+    [pick.rating != null ? `Rated ${pick.rating.toFixed(1)}` : "", cost ? `${cost} a head` : ""].filter(Boolean).join(", "),
+    ...pick.friends.map((f) => `${dinerOf(f.key).name}: ${f.order?.dish ?? "ask the staff"}`),
+    `Directions: ${directionsUrl(pick, null)}`,
+    typeof window !== "undefined" ? `Plan yours: ${window.location.origin}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return (
     <article className={s.board} key={pick.id}>
@@ -910,7 +942,6 @@ function Pickboard({
           <p className={s.pickMeta}>
             {result.occasion === "meal" ? "A meal" : result.occasion === "coffee" ? "Coffee" : "Dessert"} for {pick.friends.length}
             {pick.area ? ` in ${pick.area}` : ""}
-            {pick.rating ? `, rated ${pick.rating}` : ""}
           </p>
           <h2 className={s.venue}>{pick.name}</h2>
           {nar?.why && <p className={s.why}>{nar.why}</p>}
@@ -927,17 +958,15 @@ function Pickboard({
             </p>
           </div>
           <div className={s.pickActions}>
-            {pick.address && (
-              <a href={mapsUrl(pick)} target="_blank" rel="noreferrer" className={s.btnPrimary}>
-                Open in Maps
-              </a>
-            )}
+            <PlaceActions pick={pick} here={here} onHere={setHere} shareText={shareText} />
             <button type="button" className={s.btnGhost} aria-expanded={open} onClick={() => setOpenId(open ? null : pick.id)}>
               {open ? "Hide the evidence" : "Show the evidence"}
             </button>
           </div>
         </div>
       </div>
+
+      <PlaceFacts pick={pick} people={pick.friends.length} city={result.city} here={here} />
 
       <ol className={s.orders}>
         {pick.friends.map((f, i) => {
@@ -967,7 +996,15 @@ function Pickboard({
                   {d.veg ? ", vegetarian" : ""}
                 </p>
               </DishPhoto>
-              {nar?.lines?.[f.key] && <p className={s.orderWhy}>{nar.lines[f.key]}</p>}
+              {(() => {
+                const said = reviewMentions(pick, f.order?.dish);
+                return said ? (
+                  <p className={s.orderSaid}>
+                    <span aria-hidden>★</span> Named in {said} review{said === 1 ? "" : "s"} of {pick.name}
+                  </p>
+                ) : null;
+              })()}
+              {nar?.lines?.[f.key] && <p className={s.orderWhy}>{named(nar.lines[f.key])}</p>}
               <div className={s.meter} aria-hidden>
                 <span style={{ width: pct(f.fit) }} />
               </div>
@@ -975,6 +1012,22 @@ function Pickboard({
           );
         })}
       </ol>
+
+      {pick.menu.length > 0 && (
+        <section className={pf.menu} aria-label={`On the menu at ${pick.name}`}>
+          <div className={pf.menuHead}>
+            <h3>On the menu at {pick.name}</h3>
+            <p>The venue&rsquo;s own menu highlights in Qloo. Dark ones are on your table.</p>
+          </div>
+          <ul>
+            {pick.menu.map((m) => (
+              <li key={m} data-ordered={ordered.has(m)} data-veg={isVeg(m)}>
+                {m}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {open && <Evidence result={result} pick={pick} diners={diners} steps={steps} named={named} />}
 
@@ -997,7 +1050,18 @@ function Pickboard({
                     <span className={s.otherText}>
                       <span className={s.otherName}>{p.name}</span>
                       <span className={s.otherMeta}>
-                        {p.area ? `${p.area}. ` : ""}Lowest fit {pct(Math.min(...p.friends.map((f) => f.fit)))}
+                        {[
+                          p.area,
+                          p.rating != null ? `${p.rating.toFixed(1)}★` : "",
+                          costLine(p) ? `${costLine(p)} a head` : "",
+                          (() => {
+                            const dl = distanceLine(p, here, result.city);
+                            return dl && !dl.inside ? (here ? `${dl.value} from you` : `${dl.value} from the centre`) : "";
+                          })(),
+                          `lowest fit ${pct(Math.min(...p.friends.map((f) => f.fit)))}`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </span>
                     </span>
                     <span className={s.otherDishes} aria-hidden>

@@ -205,7 +205,10 @@ export function templateNarration(n: NarrateInput): Narration {
 
 /** Rejects model copy that breaks Sapor's honesty rules, so the template is used instead. */
 const BANNED = /\b(you|your|yours|you'll|you're|delicious|tasty|amazing|perfect|best|great|guaranteed|will love|definitely)\b/i;
-const okLine = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 8 && v.length < max && !BANNED.test(v);
+// seats reach the model as letters; a line that names "Friend A" or "Person B" would show the letter to the table
+const SEAT_REF = /\b(friend|person|guest|diner|seat|member)\s+[A-F]\b|\b[A-F]'s\b/i;
+const okLine = (v: unknown, max: number): v is string =>
+  typeof v === "string" && v.length > 8 && v.length < max && !BANNED.test(v) && !SEAT_REF.test(v);
 
 const narrationCache = new Map<string, Narration>();
 

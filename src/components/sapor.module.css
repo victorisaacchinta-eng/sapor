@@ -1715,3 +1715,15 @@
     }
   }
 }
+
+.orderSaid {
+  margin: 10px 18px 0;
+  display: inline-flex;
+  align-self: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 2px solid var(--ink);
+  background: var(--yellow);
+  font-size: 0.8rem;
+  font-weight: 800;
+}

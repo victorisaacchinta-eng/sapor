@@ -183,6 +183,26 @@ export type Pick = {
   vibe: string[]; // ambience / decor / noise tags of the venue
   cuisines: string[];
   menu: string[];
+  details: PlaceDetails;
+};
+
+export type Hours = Partial<Record<"monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday", { opens?: string; closes?: string; closed?: boolean }[]>>;
+
+/** Practical facts about a venue, straight from Qloo's place data. Nothing here is estimated. */
+export type PlaceDetails = {
+  costText?: string; // e.g. "₹400 to ₹1600", Qloo's cost tag for the venue
+  costFrom?: number;
+  costTo?: number;
+  currency?: string; // symbol, e.g. "₹"
+  distanceM?: number; // from the centre of the area searched
+  country?: string;
+  hours?: Hours;
+  phone?: string;
+  website?: string;
+  menuUrl?: string;
+  summary?: string;
+  reviewWords?: { name: string; count: number }[];
+  facts: { kind: "book" | "diet" | "access" | "park" | "noise" | "space" | "family" | "pay"; label: string }[];
 };
 
 export type StepEvent = {
@@ -233,6 +253,75 @@ function sharedTaste(profiles: FriendProfile[]): TasteWeight[] {
   return [...acc.entries()]
     .map(([id, v]) => ({ id, name: v.name, affinity: round((v.sum / n) * (n > 1 ? 0.5 + 0.5 * (v.count / n) : 1)) }))
     .sort((a, b) => b.affinity - a.affinity);
+}
+
+const SYM: Record<string, string> = { inr: "₹", usd: "$", gbp: "£", eur: "€", jpy: "¥", aud: "A$", cad: "C$", sgd: "S$", aed: "AED " };
+
+function parseCost(text: string | undefined) {
+  if (!text) return {};
+  const nums = [...text.replace(/,/g, "").matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
+  const sym = text.match(/^[^\d\s]+/)?.[0];
+  if (!nums.length) return { costText: text };
+  return { costText: text, costFrom: nums[0], costTo: nums[1] ?? nums[0], currency: sym };
+}
+
+const parseJSON = <T,>(v: unknown): T | undefined => {
+  if (typeof v !== "string") return (v ?? undefined) as T | undefined;
+  try {
+    return JSON.parse(v) as T;
+  } catch {
+    return undefined;
+  }
+};
+
+function placeDetails(e: QlooEntity): PlaceDetails {
+  const p = (e.properties ?? {}) as Record<string, unknown>;
+  const tags = e.tags ?? [];
+  const names = (kind: string) => tags.filter((t) => tagKind(t) === kind).map((t) => t.name);
+  const has = (kind: string, re: RegExp) => names(kind).some((n) => re.test(n));
+
+  let cost = parseCost(names("cost_description")[0] ?? (typeof p.cost_description === "string" ? p.cost_description : undefined));
+  const range = p.price_range as { from?: number | null; to?: number | null; currency?: string } | undefined;
+  if (!cost.costFrom && range?.from) {
+    const sym = SYM[(range.currency ?? "").toLowerCase()] ?? "";
+    cost = { costText: `${sym}${range.from} to ${sym}${range.to ?? range.from}`, costFrom: range.from, costTo: range.to ?? range.from, currency: sym };
+  }
+
+  const facts: PlaceDetails["facts"] = [];
+  const planning = names("planning");
+  if (planning.some((n) => /dinner reservations recommended/i.test(n))) facts.push({ kind: "book", label: "Book ahead for dinner" });
+  else if (planning.some((n) => /reservations recommended/i.test(n))) facts.push({ kind: "book", label: "Booking recommended" });
+  else if (planning.some((n) => /accepts reservations/i.test(n))) facts.push({ kind: "book", label: "Takes bookings" });
+  const diet = names("dietary_option");
+  if (diet.length) facts.push({ kind: "diet", label: diet.slice(0, 3).join(", ") + " options" });
+  if (has("accessibility", /wheelchair/i)) facts.push({ kind: "access", label: "Wheelchair accessible" });
+  const park = names("parking");
+  const parkLabel = park.find((n) => /valet/i.test(n)) ?? park.find((n) => /free/i.test(n));
+  if (parkLabel) facts.push({ kind: "park", label: parkLabel });
+  const noise = names("noise_level")[0];
+  if (noise) facts.push({ kind: "noise", label: `${noise} noise` });
+  if (has("amenity", /outdoor/i) || has("service_type", /outdoor/i)) facts.push({ kind: "space", label: names("view")[0] ? `Outdoor seating, ${names("view")[0].toLowerCase()}` : "Outdoor seating" });
+  if (names("children").length) facts.push({ kind: "family", label: "Good for kids" });
+  if (has("amenity", /pet/i)) facts.push({ kind: "family", label: "Pet friendly" });
+  const pay = names("payments");
+  if (pay.some((n) => /nfc|mobile/i.test(n))) facts.push({ kind: "pay", label: "Cards and tap to pay" });
+  else if (pay.some((n) => /card/i.test(n))) facts.push({ kind: "pay", label: "Takes cards" });
+
+  const kw = Array.isArray(p.keywords) ? (p.keywords as { name: string; count: number }[]) : [];
+  const geo = p.geocode as { country_code?: string } | undefined;
+  const str = (k: string) => (typeof p[k] === "string" && p[k] ? (p[k] as string) : undefined);
+  return {
+    ...cost,
+    distanceM: typeof e.query?.distance === "number" ? Math.round(e.query.distance) : undefined,
+    country: geo?.country_code ?? undefined,
+    hours: parseJSON<Hours>(p.hours),
+    phone: str("phone"),
+    website: str("website"),
+    menuUrl: str("menu_url"),
+    summary: str("short_description"),
+    reviewWords: kw.filter((k) => k.count >= 2).sort((a, b) => b.count - a.count).slice(0, 8),
+    facts: facts.slice(0, 8),
+  };
 }
 
 function hasFood(e: QlooEntity) {
@@ -322,6 +411,7 @@ function scorePlace(e: QlooEntity, profiles: FriendProfile[], friends: FriendIn[
     vibe: [...new Set(vibe)].slice(0, 8),
     cuisines: [...new Set(cuisines)].slice(0, 8),
     menu: [...new Set(menu)].slice(0, 14),
+    details: placeDetails(e),
   };
 }
 
@@ -379,6 +469,10 @@ export async function* plan(
     const seen = new Set(candidates.map((c) => c.entity_id));
     for (const e of found) {
       if (seen.has(e.entity_id)) continue;
+      if ((e.properties as { is_closed?: boolean } | undefined)?.is_closed) {
+        rejected.push({ name: e.name, reason: "Qloo lists it as permanently closed." });
+        continue;
+      }
       if (!hasFood(e)) {
         rejected.push({ name: e.name, reason: "No cuisine or menu data in Qloo, so it may not be a food venue." });
         continue;
