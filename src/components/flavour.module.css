@@ -1,0 +1,301 @@
+/* ---------------------------------------------------------------- */
+/* Intro splash                                                      */
+/* ---------------------------------------------------------------- */
+
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--yellow);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  pointer-events: none;
+  animation: introOut 520ms cubic-bezier(0.7, 0, 0.2, 1) 1150ms both;
+}
+
+@keyframes introOut {
+  to {
+    transform: translateY(-100%);
+    visibility: hidden;
+  }
+}
+
+.introShapes {
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  gap: 6px;
+}
+
+.introShapes span {
+  display: block;
+  animation: shapeIn 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.s1 {
+  animation-delay: 60ms !important;
+}
+.s2 {
+  animation-delay: 150ms !important;
+}
+.s3 {
+  animation-delay: 240ms !important;
+}
+.s4 {
+  animation-delay: 330ms !important;
+}
+
+@keyframes shapeIn {
+  from {
+    opacity: 0;
+    transform: translateY(26px) rotate(-90deg) scale(0.4);
+  }
+}
+
+.introWord {
+  margin: 4px 0 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(3rem, 9vw, 5.5rem);
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  color: var(--ink);
+  animation: wordIn 480ms var(--ease-out) 300ms both;
+}
+
+@keyframes wordIn {
+  from {
+    opacity: 0;
+    clip-path: inset(100% 0 0 0);
+    transform: translateY(10px);
+  }
+}
+
+.introLines p {
+  display: none;
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  animation: wordIn 420ms var(--ease-out) 520ms both;
+}
+
+/* the line chosen before paint; the first is the fallback without JS */
+:global(html:not([data-intro])) .introLines p[data-i="0"],
+:global(html[data-intro="0"]) .introLines p[data-i="0"],
+:global(html[data-intro="1"]) .introLines p[data-i="1"],
+:global(html[data-intro="2"]) .introLines p[data-i="2"],
+:global(html[data-intro="3"]) .introLines p[data-i="3"],
+:global(html[data-intro="4"]) .introLines p[data-i="4"],
+:global(html[data-intro="5"]) .introLines p[data-i="5"] {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Quote ticker                                                      */
+/* ---------------------------------------------------------------- */
+
+.ticker {
+  background: var(--ink);
+  color: var(--bone);
+  border-top: var(--line) solid var(--ink);
+  border-bottom: var(--line) solid var(--ink);
+  overflow: hidden;
+  padding: 16px 0;
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: marquee 70s linear infinite;
+}
+
+.ticker:hover .track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.quote {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 0 34px;
+  white-space: nowrap;
+  border-right: 2px solid color-mix(in oklab, var(--bone) 25%, transparent);
+}
+
+.quote blockquote {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 1.15rem;
+  letter-spacing: -0.005em;
+}
+
+.quote figcaption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--yellow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    animation: none;
+    flex-wrap: wrap;
+    width: auto;
+    row-gap: 12px;
+  }
+  .quote[aria-hidden="true"] {
+    display: none;
+  }
+  .quote {
+    white-space: normal;
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Working quip                                                      */
+/* ---------------------------------------------------------------- */
+
+.quip {
+  margin: 14px 0 0;
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  color: var(--red);
+  animation: quipIn 380ms var(--ease-out) both;
+}
+
+@keyframes quipIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* Fortune badge                                                     */
+/* ---------------------------------------------------------------- */
+
+.fortune {
+  position: fixed;
+  right: clamp(12px, 2.4vw, 28px);
+  bottom: clamp(12px, 2.4vw, 28px);
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.badge {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  border: var(--line) solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+
+.badge:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--red);
+}
+
+.badge:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.ring {
+  position: absolute;
+  inset: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  animation: spin 18s linear infinite;
+}
+
+.ring text {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 9.6px;
+  letter-spacing: 0.06em;
+  fill: var(--ink);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.core {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--red);
+  color: var(--paper);
+  display: grid;
+  place-items: center;
+}
+
+.bubble {
+  max-width: min(280px, 64vw);
+  margin: 0 0 34px;
+  padding: 12px 14px;
+  background: var(--yellow);
+  border: var(--line) solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.02rem;
+  line-height: 1.2;
+  animation: bubbleIn 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom right;
+}
+
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.7) rotate(4deg);
+  }
+}
+
+@media (max-width: 560px) {
+  .badge {
+    width: 72px;
+    height: 72px;
+  }
+  .ring text {
+    font-size: 11px;
+  }
+  .core {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+  }
+}

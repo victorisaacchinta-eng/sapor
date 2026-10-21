@@ -1,5 +1,7 @@
 # Sapor
 
+*Savour the same place.*
+
 **A taste agent for your table.** Everyone names a film, show or artist they love. Sapor reads the taste behind those picks with Qloo, finds a real place nearby that suits the whole group, and writes what each person should order there, with the evidence for every line.
 
 *Sapor* is Latin for taste.

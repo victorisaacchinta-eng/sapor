@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import s from "./sapor.module.css";
 import { Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
+import { FortuneBadge, Intro, Ticker, WorkingQuip } from "./Flavour";
 
 /* ------------------------------------------------------------------ */
 /* Types mirrored from the server                                      */
@@ -333,6 +334,8 @@ export default function Sapor() {
 
   return (
     <div className={s.page}>
+      <Intro />
+      <FortuneBadge />
       <header className={s.masthead}>
         <a href="#top" className={s.wordmark} aria-label="Sapor home">
           Sap
@@ -365,7 +368,7 @@ export default function Sapor() {
             </button>
           </div>
           <p className={s.gloss}>
-            <span>Sapor</span> is Latin for taste.
+            <span>Sapor</span> is Latin for taste. Savour the same place.
           </p>
         </div>
         <div className={s.heroArt} aria-hidden>
@@ -494,6 +497,8 @@ export default function Sapor() {
         </div>
       </section>
 
+      <Ticker />
+
       <section className={s.resultSection} ref={resultRef} aria-live="polite" aria-label="Sapor's pick">
         {run.state !== "idle" && <Output run={run} active={active} setActive={setActive} />}
       </section>
@@ -517,7 +522,7 @@ export default function Sapor() {
             </a>{" "}
             and are credited to each photographer. Dish-to-cuisine matching and the illustrations are Sapor&rsquo;s own.
           </p>
-          <p>Built by Victor Isaac for the Qloo Agentic Hackathon, 2026. Open source under MIT.</p>
+          <p>Built by Victor Isaac for the Qloo Agentic Hackathon, 2026. Open source under MIT. Savour the same place.</p>
         </div>
       </footer>
     </div>
@@ -795,7 +800,7 @@ function Output({ run, active, setActive }: { run: Exclude<Run, { state: "idle" 
       {(run.state === "running" || run.state === "error") && <Working run={run} />}
       {run.state === "done" && run.result.picks.length === 0 && (
         <div className={s.empty}>
-          <h2 className={s.h2}>No match here yet</h2>
+          <h2 className={s.h2}>The kitchen&rsquo;s closed here</h2>
           <p>
             Qloo has no {run.result.venueLabel}s with menu data for &ldquo;{run.result.city}&rdquo;. Try a nearby
             neighbourhood or a bigger city name.
@@ -824,6 +829,7 @@ function Working({ run }: { run: Exclude<Run, { state: "idle" | "done" }> }) {
       </div>
       <div>
         <h2 className={s.h2}>{run.state === "error" ? "Something stopped the agent" : "Sapor is reading your table"}</h2>
+        {run.state === "running" && <WorkingQuip />}
         {run.state === "error" && <p className={s.errorMsg}>{run.message}</p>}
         <StepList steps={run.steps} named={named} running={run.state === "running"} />
       </div>
