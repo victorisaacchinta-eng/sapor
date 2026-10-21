@@ -289,6 +289,8 @@ export function photosEnabled() {
   return Boolean(UNSPLASH() || PEXELS());
 }
 
+const HERO_VEG = ["paneer", "tofu", "halloumi", "mushroom", "jackfruit", "falafel", "chickpea", "aloo", "potato"];
+
 const NONVEG_DISH = /\b(chicken|mutton|lamb|fish|prawn|prawns|shrimp|beef|pork|bacon|ham|egg|eggs|keema|turkey|duck|salmon|tuna|meat)\b/i;
 
 export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
@@ -297,8 +299,10 @@ export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
   if (!n) return null;
   // paneer, veg and anything without a meat word should not be shown with meat
   const veg = !NONVEG_DISH.test(n);
+  // the veg ingredient a dish is built around, used when no photo of the exact dish passes
+  const hero = veg ? HERO_VEG.find((w) => has(n, w)) : undefined;
   const cached = cache.get(n);
-  if (cached && Date.now() - cached.at < TTL) return cached.v;
+  if (cached && Date.now() - cached.at < TTL && (cached.v || !hero)) return cached.v;
 
   const queries: string[] = [];
   const push = (q: string) => {
@@ -321,6 +325,35 @@ export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
       if (!best || r.s > best.s) best = { h, ...r };
     }
     if (best?.strong) break;
+  }
+
+  // nothing passed for the exact dish: show a real photo of the dish's key veg ingredient
+  // instead of an empty card, and say plainly that it is a close match
+  if (!best && hero) {
+    const hits = await search(hero === "paneer" ? "paneer dish" : `${hero} dish`);
+    const more = hits.length ? [] : await search(hero);
+    const pick = [...hits, ...more].slice(0, 20).find((h) => {
+      const text = norm(h.text);
+      return has(text, hero) && !MEAT.test(text) && !PEOPLE.test(text);
+    });
+    if (pick) {
+      const v: DishPhoto = {
+        src: pick.square,
+        srcWide: pick.wide,
+        alt: pick.text.trim().split("\n")[0].trim() || `A ${hero} dish`,
+        avgColor: pick.color,
+        photographer: pick.photographer,
+        photographerUrl: pick.photographerUrl,
+        photoUrl: pick.photoUrl,
+        source: pick.source,
+        match: "similar",
+        anchor: `a ${hero} dish`,
+      };
+      trackUse(pick);
+      cache.set(n, { at: Date.now(), v });
+      persist();
+      return v;
+    }
   }
 
   const v: DishPhoto | null = best
