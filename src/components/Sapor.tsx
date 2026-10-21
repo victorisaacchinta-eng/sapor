@@ -5,7 +5,7 @@ import s from "./sapor.module.css";
 import { Glyph, hash, makeMosaic, Mosaic, seat, SHAPE_RADIUS, tableMosaic, Tile } from "./art";
 import { FortuneBadge, Intro, Ticker, WorkingQuip } from "./Flavour";
 import SmoothScroll from "./SmoothScroll";
-import { costLine, directionsUrl, distanceLine, PlaceActions, PlaceFacts, type Here } from "./PlaceFacts";
+import { costLine, directionsUrl, dishPhotosUrl, distanceLine, PlaceActions, PlaceFacts, type Here } from "./PlaceFacts";
 import pf from "./place.module.css";
 import { isAlcohol, isVeg } from "@/lib/dishes";
 import type { PlaceDetails } from "@/lib/agent";
@@ -598,11 +598,13 @@ function DishPhoto({
   dish,
   shape,
   color,
+  realPhotos,
   children,
 }: {
   dish?: string;
   shape: keyof typeof SHAPE_RADIUS;
   color: string;
+  realPhotos?: string;
   children?: React.ReactNode;
 }) {
   const { photo, done } = usePhoto(dish);
@@ -633,13 +635,28 @@ function DishPhoto({
       {photo && (
         <figcaption className={s.credit}>
           {photo.match === "similar" ? `Shows ${photo.anchor}, a close match. ` : ""}
-          Photo by{" "}
+          Stock photo by{" "}
           <a href={photo.photographerUrl} target="_blank" rel="noreferrer">
             {photo.photographer}
           </a>{" "}
           on{" "}
           <a href={photo.photoUrl} target="_blank" rel="noreferrer">
             {photo.source}
+          </a>
+          {realPhotos && (
+            <>
+              {". "}
+              <a href={realPhotos} target="_blank" rel="noreferrer" className={s.realPhotos}>
+                See the real one
+              </a>
+            </>
+          )}
+        </figcaption>
+      )}
+      {!photo && done && realPhotos && (
+        <figcaption className={s.credit}>
+          <a href={realPhotos} target="_blank" rel="noreferrer" className={s.realPhotos}>
+            See photos of the real one
           </a>
         </figcaption>
       )}
@@ -905,7 +922,8 @@ function Pickboard({
   const named = (t: string) =>
     t
       .replace(/\b([A-F]):/g, (m, k: string) => (diners.find((d) => d.key === k)?.name ?? k) + ":")
-      .replace(/\b(?:friend|person|guest|diner|seat|member)\s+([A-F])\b/gi, (m, k: string) => diners.find((d) => d.key === k.toUpperCase())?.name ?? m);
+      .replace(/\b(?:friend|person|guest|diner|seat|member)\s+([A-F])\b/gi, (m, k: string) => diners.find((d) => d.key === k.toUpperCase())?.name ?? m)
+      .replace(/\b([A-F])(['’]s)\b/g, (m, k: string, s2: string) => (diners.find((d) => d.key === k)?.name ?? k) + s2);
   const [here, setHere] = useState<Here>(null);
   const ordered = new Set(pick.friends.map((f) => f.order?.dish).filter(Boolean) as string[]);
   const cost = costLine(pick);
@@ -986,7 +1004,12 @@ function Pickboard({
                 ))}
                 <span className={s.orderLovesText}>{d.loves.map((c) => c.name).join(" + ")}</span>
               </div>
-              <DishPhoto dish={f.order?.dish} shape={look.shape} color={look.color}>
+              <DishPhoto
+                dish={f.order?.dish}
+                shape={look.shape}
+                color={look.color}
+                realPhotos={f.order ? dishPhotosUrl(f.order.dish, pick, result.city) : undefined}
+              >
                 <p className={s.dishName}>{f.order?.dish ?? "Ask the staff"}</p>
                 <p className={s.dishKind} data-kind={f.order?.kind ?? "none"}>
                   {f.order?.kind === "taste_match"
@@ -1019,7 +1042,7 @@ function Pickboard({
         <section className={pf.menu} aria-label={`Menu highlights at ${pick.name}`}>
           <div className={pf.menuHead}>
             <h3>Menu highlights at {pick.name}</h3>
-            <p>As listed in Qloo for this venue. Menus change, so check on arrival. Dark ones are on your table.</p>
+            <p>Menu highlights and specialty dishes Qloo lists for this venue. Menus change, so check on arrival. Dark ones are on your table.</p>
           </div>
           <ul>
             {pick.menu.map((m) => (
@@ -1143,7 +1166,7 @@ function Evidence({
               affinity for the venue. The person a venue suits least decides most of the ranking.
             </p>
             <p>
-              <b>Dishes</b> come from this venue&rsquo;s Qloo menu highlights. Linking a dish to a cuisine is Sapor&rsquo;s own keyword map, not Qloo data.
+              <b>Dishes</b> come from this venue&rsquo;s Qloo menu highlights and specialty dishes. Dish photos are credited stock photos; &ldquo;See the real one&rdquo; opens a search for diners&rsquo; photos at this venue. Linking a dish to a cuisine is Sapor&rsquo;s own keyword map, not Qloo data.
             </p>
             {pick.vibe.length > 0 && (
               <p>

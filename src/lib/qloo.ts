@@ -188,6 +188,13 @@ export async function searchTaste(query: string, log?: QlooRequestLog[]) {
   return r.results ?? [];
 }
 
+/** Full entity records by id. Used for the picked venues only, to get Qloo's external ids (Google Maps). */
+export async function entitiesById(ids: string[], log?: QlooRequestLog[]) {
+  if (!ids.length) return [];
+  const r = await qlooGet<{ results?: QlooEntity[] }>("/entities", { entity_ids: ids.join(",") }, log);
+  return r.results ?? [];
+}
+
 export async function tasteTags(entityIds: string[], log?: QlooRequestLog[]) {
   const r = await qlooGet<{ results?: { tags?: QlooTag[] } }>(
     "/v2/insights",

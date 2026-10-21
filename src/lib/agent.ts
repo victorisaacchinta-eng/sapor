@@ -1,5 +1,6 @@
 import "server-only";
 import {
+  entitiesById,
   placesFor,
   QlooEntity,
   QlooRequestLog,
@@ -204,6 +205,7 @@ export type PlaceDetails = {
   website?: string;
   menuUrl?: string;
   summary?: string;
+  googlePlaceId?: string; // Qloo's link to the same venue on Google Maps, where its own and diners' photos live
   reviewWords?: { name: string; count: number }[];
   facts: { kind: "book" | "diet" | "access" | "park" | "noise" | "space" | "family" | "pay"; label: string }[];
 };
@@ -312,12 +314,26 @@ function placeDetails(e: QlooEntity): PlaceDetails {
     website: str("website"),
     menuUrl: str("menu_url"),
     summary: str("short_description"),
+    googlePlaceId: googlePlaceId(p),
     reviewWords: kw.filter((k) => k.count >= 2).sort((a, b) => b.count - a.count).slice(0, 8),
     facts: facts.slice(0, 8),
   };
 }
 
+function googlePlaceId(p: Record<string, unknown>) {
+  const ext = p.external as { google_place?: { place_id?: unknown } } | undefined;
+  const id = ext?.google_place?.place_id;
+  return typeof id === "string" && /^[\w-]{10,}$/.test(id) ? id : undefined;
+}
+
+/** Qloo's specialty dishes for a venue, a second dish source beside menu highlights. */
+function specialtyDishes(e: QlooEntity) {
+  const sd = (e.properties as Record<string, unknown> | undefined)?.specialty_dishes;
+  return Array.isArray(sd) ? sd.map((d) => (d as { name?: unknown })?.name).filter((n): n is string => typeof n === "string" && !!n.trim()) : [];
+}
+
 function hasFood(e: QlooEntity) {
+  if (specialtyDishes(e).length) return true;
   return (e.tags ?? []).some((t) => {
     const k = tagKind(t);
     return k === "cuisine" || k === "menu_highlight";
@@ -327,7 +343,10 @@ function hasFood(e: QlooEntity) {
 function scorePlace(e: QlooEntity, profiles: FriendProfile[], friends: FriendIn[]): Pick {
   const tags = e.tags ?? [];
   const placeTagIds = new Set(tags.map(tagId));
-  const menu = tags.filter((t) => tagKind(t) === "menu_highlight").map((t) => t.name);
+  // Qloo menu highlights first, then Qloo specialty dishes the highlights do not already name
+  const highlights = tags.filter((t) => tagKind(t) === "menu_highlight").map((t) => t.name);
+  const seen = new Set(highlights.map((d) => d.toLowerCase()));
+  const menu = [...highlights, ...specialtyDishes(e).filter((d) => !seen.has(d.toLowerCase()))];
   const cuisines = tags.filter((t) => tagKind(t) === "cuisine").map((t) => t.name);
   const vibe = tags
     .filter((t) => ["ambience", "decor"].includes(tagKind(t)))
@@ -511,6 +530,18 @@ export async function* plan(
   const ranked = rank(scored.map((pk) => ({ pk, id: pk.id, name: pk.name, fits: pk.friends.map((f) => f.fit), affinity: pk.qlooAffinity })));
   for (const r of ranked) r.pk.tableScore = round(r.tableScore);
   const picks = ranked.slice(0, 3).map((r) => r.pk);
+  // One more Qloo call for the picks' external ids, so "Their photos" opens the exact venue on Google Maps.
+  // Optional: if it fails, the button simply does not appear.
+  try {
+    const full = await entitiesById(picks.map((pk) => pk.id), log);
+    for (const pk of picks) {
+      const e = full.find((x) => x.entity_id === pk.id);
+      const id = e && googlePlaceId((e.properties ?? {}) as Record<string, unknown>);
+      if (id) pk.details.googlePlaceId = id;
+    }
+  } catch {
+    /* no external ids, no photo link */
+  }
   yield {
     type: "step",
     id: "fit",

@@ -80,7 +80,8 @@ People are bad at describing food taste in the abstract, but brilliant at naming
 | 📍 | **Distance**: from you (opt in, stays on your device) or from the area's centre | Your browser's location and Qloo's coordinates |
 | ✅ | **Good to know**: booking, vegetarian options, wheelchair access, parking, noise, outdoor seating, kids, pets, payments | Qloo place tags |
 | 💬 | **Reviews keep mentioning**, with counts | Qloo review keyword counts (how Qloo counts them is not documented) |
-| 📋 | **Menu highlights**, with vegetarian-by-name dishes marked | Qloo `menu_highlight` tags. Not a live menu, so check on arrival |
+| 📋 | **Menu highlights**, with vegetarian-by-name dishes marked | Qloo `menu_highlight` tags and `specialty_dishes`. Not a live menu, so check on arrival |
+| 📸 | **Their photos** and **See the real one** | The venue's Google Maps page via Qloo's `external.google_place` id, and an image search for each dish at that venue. Sapor links out and never copies these photos |
 | 📲 | **Directions, Call, Send to the group** | Coordinates, phone, and a ready-to-paste summary for the chat |
 
 <img src="media/readme/divider.svg" width="100%" alt="">
@@ -207,7 +208,7 @@ tests/                         node:test suites (npm test)
 - **No dish prices or dish ratings.** Qloo has the venue's price range and rating, not a price or star rating per dish. Sapor shows the venue's range, a labelled estimate for the table, and how many reviews name a dish, and never invents the rest.
 - **Direct venue ranking is flat.** Qloo's own venue order changes less between very different tastes than you might expect. Sapor's re-ranking on each venue's tags is what makes picks differ; it is our method, not a Qloo score.
 - **Dish matching and vegetarian checks are keyword based.** Unusual dish names can be missed (the UI says "house favourite"). Dishes usually made with meat (bao, momos, ramen, burgers) only count as vegetarian when the name says so. Check with the venue.
-- **Photos are stock, not the venue's own.** Each is a real photo of the named dish (or, for a veg dish with no clean match, of its key ingredient, labelled "a close match").
+- **Dish photos are stock, not the venue's own.** Each is a real, credited photo of the named dish (or, for a veg dish with no clean match, of its key ingredient, labelled "a close match"). The venue's own and diners' photos belong to them or to the platforms they were posted on (Zomato and Swiggy terms bar copying them), and there is no licensed API that labels venue photos by dish. So Sapor links to them instead: **Their photos** opens the venue's Google Maps page, and **See the real one** searches for that dish at that venue.
 - **Distance is a straight line.** Tap Directions for real travel time.
 - **Coverage varies by city.** Menu highlights are rich in Hyderabad, Bengaluru and Brooklyn; thinner in some neighbourhoods and smaller towns.
 - **Some cafe results are not cafes.** Qloo's cafe filter can return a viewpoint or a museum cafe (in Shoreditch it returned Sky Garden). Venues with no cuisine or menu data are set aside, but a place with a cafe inside can still appear.

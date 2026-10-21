@@ -95,8 +95,21 @@ export function distanceLine(pick: Pick, here: Here, city: string): { value: str
 export function directionsUrl(pick: Pick, here: Here) {
   const dest = pick.lat != null && pick.lon != null ? `${pick.lat},${pick.lon}` : [pick.name, pick.address].filter(Boolean).join(", ");
   const q = new URLSearchParams({ api: "1", destination: dest });
+  if (pick.details?.googlePlaceId) q.set("destination_place_id", pick.details.googlePlaceId);
   if (here) q.set("origin", `${here.lat},${here.lon}`);
   return `https://www.google.com/maps/dir/?${q}`;
+}
+
+/** The venue's own page on Google Maps (Qloo supplies the id), where the owner's and diners' photos are. We link, we never copy them. */
+export function placePhotosUrl(pick: Pick) {
+  const id = pick.details?.googlePlaceId;
+  if (!id) return undefined;
+  return `https://www.google.com/maps/search/?${new URLSearchParams({ api: "1", query: [pick.name, pick.address].filter(Boolean).join(", "), query_place_id: id })}`;
+}
+
+/** An image search for this dish at this venue: diners' and delivery-app photos, opened in a new tab, never copied. */
+export function dishPhotosUrl(dish: string, pick: Pick, city: string) {
+  return `https://www.google.com/search?${new URLSearchParams({ udm: "2", q: `${dish} ${pick.name} ${city.split(",")[0]}` })}`;
 }
 
 /* ---------------------------- the band ---------------------------- */
@@ -300,6 +313,11 @@ export function PlaceActions({
         <button type="button" className={p.btn} onClick={locate} disabled={locating}>
           {locating ? "Finding you" : "Distance from me"}
         </button>
+      )}
+      {placePhotosUrl(pick) && (
+        <a href={placePhotosUrl(pick)} target="_blank" rel="noreferrer" className={p.btn}>
+          Their photos
+        </a>
       )}
       {(pick.details?.menuUrl || pick.details?.website) && (
         <a href={pick.details.menuUrl ?? pick.details.website} target="_blank" rel="noreferrer" className={p.btn}>
