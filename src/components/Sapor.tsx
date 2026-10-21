@@ -570,7 +570,17 @@ function usePhoto(dish?: string) {
   return state.dish === dish ? state : { photo: null, done: !dish };
 }
 
-function DishPhoto({ dish, shape, color }: { dish?: string; shape: keyof typeof SHAPE_RADIUS; color: string }) {
+function DishPhoto({
+  dish,
+  shape,
+  color,
+  children,
+}: {
+  dish?: string;
+  shape: keyof typeof SHAPE_RADIUS;
+  color: string;
+  children?: React.ReactNode;
+}) {
   const { photo, done } = usePhoto(dish);
   const [loaded, setLoaded] = useState<string | null>(null);
   const radius = SHAPE_RADIUS[shape];
@@ -578,17 +588,24 @@ function DishPhoto({ dish, shape, color }: { dish?: string; shape: keyof typeof 
     <figure className={s.dishFigure}>
       <div className={s.dishFrame}>
         <span className={s.dishBlock} style={{ borderRadius: radius }} aria-hidden />
-        <div className={s.dishPhoto} style={{ borderRadius: radius, background: photo?.avgColor ?? "var(--bone-2)" }} data-loading={!done || (photo && loaded !== photo.src) ? "true" : undefined}>
+        <div
+          className={s.dishPhoto}
+          style={{ borderRadius: radius, background: photo?.avgColor ?? (done ? color : "var(--bone-2)") }}
+          data-loading={!done || (photo && loaded !== photo.src) ? "true" : undefined}
+          data-empty={done && !photo ? "true" : undefined}
+        >
           {photo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={photo.src} alt={photo.alt || dish || ""} loading="lazy" onLoad={() => setLoaded(photo.src)} data-ready={loaded === photo.src} />
           ) : done ? (
-            <span className={s.dishType} style={{ color }}>
+            <span className={s.dishType}>
               {dish ?? "Ask the staff"}
+              <small>No photo good enough for this one</small>
             </span>
           ) : null}
         </div>
       </div>
+      {children}
       {photo && (
         <figcaption className={s.credit}>
           {photo.match === "similar" ? `Shows ${photo.anchor}, a close match. ` : ""}
@@ -931,16 +948,17 @@ function Pickboard({
                 ))}
                 <span className={s.orderLovesText}>{d.loves.map((c) => c.name).join(" + ")}</span>
               </div>
-              <DishPhoto dish={f.order?.dish} shape={look.shape} color={look.color} />
-              <p className={s.dishName}>{f.order?.dish ?? "Ask the staff"}</p>
-              <p className={s.dishKind} data-kind={f.order?.kind ?? "none"}>
-                {f.order?.kind === "taste_match"
-                  ? `Matches their lean towards ${f.order.matchedCuisine}`
-                  : f.order
-                    ? "House favourite, not a taste match"
-                    : "No highlight fits"}
-                {d.veg ? ", vegetarian" : ""}
-              </p>
+              <DishPhoto dish={f.order?.dish} shape={look.shape} color={look.color}>
+                <p className={s.dishName}>{f.order?.dish ?? "Ask the staff"}</p>
+                <p className={s.dishKind} data-kind={f.order?.kind ?? "none"}>
+                  {f.order?.kind === "taste_match"
+                    ? `Matches their lean towards ${f.order.matchedCuisine}`
+                    : f.order
+                      ? "House favourite, not a taste match"
+                      : "No highlight fits"}
+                  {d.veg ? ", vegetarian" : ""}
+                </p>
+              </DishPhoto>
               {nar?.lines?.[f.key] && <p className={s.orderWhy}>{nar.lines[f.key]}</p>}
               <div className={s.meter} aria-hidden>
                 <span style={{ width: pct(f.fit) }} />

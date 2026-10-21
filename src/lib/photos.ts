@@ -13,6 +13,10 @@ import "server-only";
  * dish is looked up once and shared by every visitor.
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 const UNSPLASH = () => process.env.UNSPLASH_ACCESS_KEY;
 const PEXELS = () => process.env.PEXELS_API_KEY;
 const APP = "sapor";
@@ -76,6 +80,22 @@ const FILLER = new Set([
   "speciality", "famous", "best", "new", "original", "chef", "chefs", "fantasy", "lovely", "holla",
 ]);
 
+/** Other ways stock photographers describe the same dish. */
+const ALIASES: Record<string, string[]> = {
+  "masala chai": ["chai", "masala tea", "indian tea", "milk tea"],
+  chai: ["masala chai", "masala tea", "indian tea", "milk tea"],
+  bao: ["gua bao", "steamed bun", "bao bun"],
+  momo: ["momos", "dumpling", "dumplings"],
+  "pav bhaji": ["pav bhaji", "bhaji pav"],
+  "filter coffee": ["south indian coffee", "filter kaapi", "kaapi"],
+  biryani: ["biriyani", "biryani rice"],
+  "cold brew": ["iced coffee", "cold coffee"],
+  gelato: ["ice cream"],
+  "ice cream": ["gelato"],
+};
+
+const MEAT = /\b(meat|chicken|pork|beef|mutton|lamb|fish|prawn|prawns|shrimp|bacon|ham|sausage|egg|eggs|steak|duck|turkey|salmon|tuna)\b/i;
+
 const PEOPLE = /\b(woman|man|men|women|person|people|girl|boy|couple|chef|friends|family|hand|hands|holding|eating|smiling|portrait)\b/i;
 
 const norm = (s: string) =>
@@ -105,9 +125,36 @@ export function analyseDish(dish: string) {
 /* Pexels                                                              */
 /* ------------------------------------------------------------------ */
 
-const cache = new Map<string, { at: number; v: DishPhoto | null }>();
 const TTL = 1000 * 60 * 60 * 24;
+const cache = new Map<string, { at: number; v: DishPhoto | null }>();
 const searchCache = new Map<string, { at: number; v: Hit[] }>();
+
+/*
+ * The free Unsplash tier allows 50 searches an hour, so lookups are also kept
+ * on disk (the instance's temp folder). That survives dev reloads and warm
+ * serverless restarts; the CDN cache in the route handles everything else.
+ */
+const DISK = join(tmpdir(), "sapor-photo-cache.json");
+try {
+  const raw = JSON.parse(readFileSync(DISK, "utf8")) as { cache?: [string, { at: number; v: DishPhoto | null }][]; search?: [string, { at: number; v: Hit[] }][] };
+  for (const [k, v] of raw.cache ?? []) if (Date.now() - v.at < TTL) cache.set(k, v);
+  for (const [k, v] of raw.search ?? []) if (Date.now() - v.at < TTL) searchCache.set(k, v);
+} catch {
+  /* no cache yet */
+}
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function persist() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try {
+      mkdirSync(tmpdir(), { recursive: true });
+      writeFileSync(DISK, JSON.stringify({ cache: [...cache.entries()].slice(-500), search: [...searchCache.entries()].slice(-300) }));
+    } catch {
+      /* read-only file system: memory cache only */
+    }
+  }, 500);
+}
 let lowQuota = false;
 
 const utm = `utm_source=${APP}&utm_medium=referral`;
@@ -200,6 +247,7 @@ async function search(query: string): Promise<Hit[]> {
     }));
   }
   searchCache.set(query, { at: Date.now(), v: out });
+  persist();
   if (searchCache.size > 600) searchCache.delete(searchCache.keys().next().value as string);
   return out;
 }
@@ -211,16 +259,21 @@ const FOOD = /\b(food|dish|plate|bowl|meal|bread|bun|curry|snack|dessert|cake|cu
  * weak: it doesn't, but it is the top food photo for a query that names the
  * dish (stock descriptions are often generic: "a plate of food with bread").
  */
-function score(p: Hit, anchor: string | null, modifiers: string[], tokens: string[], queryHasAnchor: boolean) {
+function score(p: Hit, anchor: string | null, modifiers: string[], tokens: string[], queryHasAnchor: boolean, veg: boolean) {
   const text = norm(p.text);
-  const peoplePenalty = PEOPLE.test(text) ? 4 : 0;
+  // a vegetarian dish is never shown with a photo that describes meat
+  if (veg && MEAT.test(text)) return { s: -1, strong: false };
+  const penalty = PEOPLE.test(text) ? 4 : 0;
   const modHits = modifiers.filter((w) => has(text, w)).length;
-  if (anchor && anchor.split(" ").every((w) => has(text, w))) return { s: 20 + modHits * 3 - peoplePenalty, strong: true };
+  if (anchor && anchor.split(" ").every((w) => has(text, w))) return { s: 20 + modHits * 3 - penalty, strong: true };
+  if (anchor && (ALIASES[anchor] ?? []).some((a) => a.split(" ").every((w) => has(text, w)))) return { s: 16 + modHits * 3 - penalty, strong: true };
   if (!anchor) {
     const hits = tokens.filter((w) => has(text, w)).length;
-    if (tokens.length && hits >= Math.ceil(tokens.length / 2)) return { s: 20 + hits * 2 - peoplePenalty, strong: true };
+    if (tokens.length && hits >= Math.ceil(tokens.length / 2)) return { s: 20 + hits * 2 - penalty, strong: true };
   }
-  if (queryHasAnchor && FOOD.test(text) && !peoplePenalty) return { s: 5 + modHits * 2, strong: false };
+  // weak: description is generic but still names part of the dish, from a query that names it
+  const anchorPart = anchor ? anchor.split(" ").some((w) => w.length > 3 && has(text, w)) : false;
+  if (queryHasAnchor && anchorPart && FOOD.test(text) && !PEOPLE.test(text)) return { s: 6 + modHits * 2 - penalty, strong: false };
   return { s: -1, strong: false };
 }
 
@@ -236,10 +289,14 @@ export function photosEnabled() {
   return Boolean(UNSPLASH() || PEXELS());
 }
 
+const NONVEG_DISH = /\b(chicken|mutton|lamb|fish|prawn|prawns|shrimp|beef|pork|bacon|ham|egg|eggs|keema|turkey|duck|salmon|tuna|meat)\b/i;
+
 export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
   if (!photosEnabled()) return null;
   const { n, anchor, tokens, modifiers } = analyseDish(dish);
   if (!n) return null;
+  // paneer, veg and anything without a meat word should not be shown with meat
+  const veg = !NONVEG_DISH.test(n);
   const cached = cache.get(n);
   if (cached && Date.now() - cached.at < TTL) return cached.v;
 
@@ -251,7 +308,7 @@ export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
   push(tokens.join(" "));
   if (anchor) {
     if (modifiers.length) push(`${modifiers[0]} ${anchor}`);
-    push(anchor === "bao" ? "bao bun" : anchor);
+    push(anchor === "bao" ? "bao bun" : anchor === "masala chai" || anchor === "chai" ? "masala chai tea" : anchor);
   }
 
   let best: { h: Hit; s: number; strong: boolean } | null = null;
@@ -259,7 +316,7 @@ export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
     const hits = await search(q);
     const queryHasAnchor = Boolean(anchor && anchor.split(" ").every((w) => has(norm(q), w)));
     for (const h of hits.slice(0, 20)) {
-      const r = score(h, anchor, modifiers, tokens, queryHasAnchor);
+      const r = score(h, anchor, modifiers, tokens, queryHasAnchor, veg);
       if (r.s < 0) continue;
       if (!best || r.s > best.s) best = { h, ...r };
     }
@@ -282,6 +339,7 @@ export async function findDishPhoto(dish: string): Promise<DishPhoto | null> {
     : null;
   if (best) trackUse(best.h);
   cache.set(n, { at: Date.now(), v });
+  persist();
   if (cache.size > 800) cache.delete(cache.keys().next().value as string);
   return v;
 }
