@@ -1727,3 +1727,11 @@
   font-size: 0.8rem;
   font-weight: 800;
 }
+
+.fairness .matchNote {
+  margin: 6px 0 0;
+  max-width: 460px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-3, #6b6259);
+}

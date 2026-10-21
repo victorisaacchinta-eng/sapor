@@ -10,6 +10,8 @@ import {
   tasteTags,
 } from "./qloo";
 import { pickDish, DishPick, isVeg } from "./dishes";
+import { rank } from "./score";
+import { parseCost, SYM } from "./cost";
 
 /* ------------------------------------------------------------------ */
 /* Resolution: turn what a friend typed into one Qloo entity            */
@@ -193,6 +195,7 @@ export type PlaceDetails = {
   costText?: string; // e.g. "₹400 to ₹1600", Qloo's cost tag for the venue
   costFrom?: number;
   costTo?: number;
+  costOpen?: boolean; // "₹2000 or above": a floor with no ceiling
   currency?: string; // symbol, e.g. "₹"
   distanceM?: number; // from the centre of the area searched
   country?: string;
@@ -255,16 +258,6 @@ function sharedTaste(profiles: FriendProfile[]): TasteWeight[] {
     .sort((a, b) => b.affinity - a.affinity);
 }
 
-const SYM: Record<string, string> = { inr: "₹", usd: "$", gbp: "£", eur: "€", jpy: "¥", aud: "A$", cad: "C$", sgd: "S$", aed: "AED " };
-
-function parseCost(text: string | undefined) {
-  if (!text) return {};
-  const nums = [...text.replace(/,/g, "").matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
-  const sym = text.match(/^[^\d\s]+/)?.[0];
-  if (!nums.length) return { costText: text };
-  return { costText: text, costFrom: nums[0], costTo: nums[1] ?? nums[0], currency: sym };
-}
-
 const parseJSON = <T,>(v: unknown): T | undefined => {
   if (typeof v !== "string") return (v ?? undefined) as T | undefined;
   try {
@@ -280,7 +273,7 @@ function placeDetails(e: QlooEntity): PlaceDetails {
   const names = (kind: string) => tags.filter((t) => tagKind(t) === kind).map((t) => t.name);
   const has = (kind: string, re: RegExp) => names(kind).some((n) => re.test(n));
 
-  let cost = parseCost(names("cost_description")[0] ?? (typeof p.cost_description === "string" ? p.cost_description : undefined));
+  let cost: ReturnType<typeof parseCost> = parseCost(names("cost_description")[0] ?? (typeof p.cost_description === "string" ? p.cost_description : undefined));
   const range = p.price_range as { from?: number | null; to?: number | null; currency?: string } | undefined;
   if (!cost.costFrom && range?.from) {
     const sym = SYM[(range.currency ?? "").toLowerCase()] ?? "";
@@ -389,8 +382,6 @@ function scorePlace(e: QlooEntity, profiles: FriendProfile[], friends: FriendIn[
   const mean = fits.reduce((s, f) => s + f.fit, 0) / Math.max(1, fits.length);
   const low = Math.min(...fits.map((f) => f.fit));
   const affinity = e.query?.affinity ?? 0;
-  // Mean rewards a good overall fit; the lowest fit makes sure nobody is left out.
-  const tableScore = affinity * (0.4 + 0.6 * ((mean + low) / 2));
 
   const p = e.properties ?? {};
   const images = (p as { images?: { url?: string }[] }).images;
@@ -405,7 +396,7 @@ function scorePlace(e: QlooEntity, profiles: FriendProfile[], friends: FriendIn[
     lat: e.location?.lat,
     lon: e.location?.lon,
     qlooAffinity: round(affinity),
-    tableScore: round(tableScore),
+    tableScore: 0, // set by rank() once every venue has been scored
     fairness: round(mean > 0 ? low / mean : 0),
     friends: fits,
     vibe: [...new Set(vibe)].slice(0, 8),
@@ -513,18 +504,19 @@ export async function* plan(
     }
     const mean = pk.friends.reduce((a, f) => a + f.fit, 0) / Math.max(1, pk.friends.length);
     const low = Math.min(...pk.friends.map((f) => f.fit));
-    pk.tableScore = round(pk.qlooAffinity * (0.4 + 0.6 * ((mean + low) / 2)));
     pk.fairness = round(mean > 0 ? low / mean : 0);
     return pk;
   });
-  scored.sort((a, b) => b.tableScore - a.tableScore);
-  const picks = scored.slice(0, 3);
+  // Weakest person first (see score.ts): the lowest match leads, Qloo affinity only breaks near ties.
+  const ranked = rank(scored.map((pk) => ({ pk, id: pk.id, name: pk.name, fits: pk.friends.map((f) => f.fit), affinity: pk.qlooAffinity })));
+  for (const r of ranked) r.pk.tableScore = round(r.tableScore);
+  const picks = ranked.slice(0, 3).map((r) => r.pk);
   yield {
     type: "step",
     id: "fit",
     label: "Scoring every venue for every person",
     detail: picks[0]
-      ? `${picks[0].name} fits the whole table best (lowest fit is ${Math.round(picks[0].fairness * 100)}% of the average)`
+      ? `${picks[0].name} suits the whole table best (its weakest match is ${Math.round(Math.min(...picks[0].friends.map((f) => f.fit)) * 100)}%)`
       : "Nothing to score",
     status: picks.length ? "done" : "warn",
   };

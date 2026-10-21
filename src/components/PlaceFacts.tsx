@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Hours, PlaceDetails } from "@/lib/agent";
 import { Glyph } from "./art";
 import p from "./place.module.css";
+import { costLabel, tableEstimate } from "@/lib/cost";
 
 /* ------------------------------------------------------------------ */
 /* Everything a person needs before they actually go: rating, price,  */
@@ -78,13 +79,7 @@ function haversine(a: { lat: number; lon: number }, b: { lat: number; lon: numbe
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-const money = (n: number, sym = "") => `${sym}${n.toLocaleString("en-IN")}`;
-
-export function costLine(pick: Pick) {
-  const d = pick.details;
-  if (!d?.costFrom) return d?.costText;
-  return d.costTo && d.costTo !== d.costFrom ? `${money(d.costFrom, d.currency)} to ${money(d.costTo, d.currency)}` : money(d.costFrom, d.currency);
-}
+export const costLine = (pick: Pick) => costLabel(pick.details);
 
 export type Here = { lat: number; lon: number } | null;
 
@@ -153,14 +148,15 @@ export function PlaceFacts({
 
       <div className={p.stat} style={{ ["--c" as string]: "var(--pink)" }}>
         <Glyph shape="square" color="var(--ink)" size={18} />
-        <span className={p.label}>Price a head</span>
+        <span className={p.label}>Price range</span>
         <span className={p.value}>{cost ?? (pick.priceLevel ? (d?.country === "IN" ? "₹" : "$").repeat(Math.min(4, pick.priceLevel)) : "Not listed")}</span>
         <span className={p.note}>
-          {d?.costFrom && people > 1
-            ? `About ${money(d.costFrom * people, d.currency)}${d.costTo && d.costTo !== d.costFrom ? ` to ${money(d.costTo * people, d.currency)}` : ""} for ${people}, our estimate`
-            : pick.priceLevel
+          {tableEstimate(d, people) ??
+            (pick.priceLevel
               ? `price level ${pick.priceLevel} of 4`
-              : "ask when you book"}
+              : d?.costText
+                ? "as Qloo describes it"
+                : "ask when you book")}
         </span>
       </div>
 
@@ -221,6 +217,7 @@ export function PlaceFacts({
       {!!d?.reviewWords?.length && (
         <div className={p.facts}>
           <span className={p.factsHead}>Reviews keep mentioning</span>
+          <span className={p.factsNote}>keyword counts from reviews Qloo has read</span>
           <ul>
             {d.reviewWords.map((w) => (
               <li key={w.name} data-kind="review">

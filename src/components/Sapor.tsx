@@ -7,7 +7,7 @@ import { FortuneBadge, Intro, Ticker, WorkingQuip } from "./Flavour";
 import SmoothScroll from "./SmoothScroll";
 import { costLine, directionsUrl, distanceLine, PlaceActions, PlaceFacts, type Here } from "./PlaceFacts";
 import pf from "./place.module.css";
-import { isVeg } from "@/lib/dishes";
+import { isAlcohol, isVeg } from "@/lib/dishes";
 import type { PlaceDetails } from "@/lib/agent";
 
 /* ------------------------------------------------------------------ */
@@ -38,7 +38,7 @@ type FriendFit = {
   share: number;
   matched: { name: string; kind: "cuisine" | "ambience"; affinity: number }[];
   vegNote?: "veg_friendly" | "few_veg" | "no_veg";
-  order?: { dish: string; matchedCuisine?: string; keyword?: string; kind: "taste_match" | "house_favourite" };
+  order?: { dish: string; matchedCuisine?: string; keyword?: string; kind: "taste_match" | "house_favourite"; shared?: boolean };
 };
 type Pick = {
   id: string;
@@ -911,7 +911,7 @@ function Pickboard({
   const cost = costLine(pick);
   const shareText = [
     `Sapor picked ${pick.name}${pick.area ? `, ${pick.area}` : ""} for us.`,
-    [pick.rating != null ? `Rated ${pick.rating.toFixed(1)}` : "", cost ? `${cost} a head` : ""].filter(Boolean).join(", "),
+    [pick.rating != null ? `Rated ${pick.rating.toFixed(1)}` : "", cost ? `price range ${cost}` : ""].filter(Boolean).join(", "),
     ...pick.friends.map((f) => `${dinerOf(f.key).name}: ${f.order?.dish ?? "ask the staff"}`),
     `Directions: ${directionsUrl(pick, null)}`,
     typeof window !== "undefined" ? `Plan yours: ${window.location.origin}` : "",
@@ -953,9 +953,10 @@ function Pickboard({
             </div>
             <p>
               {pick.friends.length > 1
-                ? `Lowest fit is ${lowestDiner.name} at ${pct(lowest)}; the table averages ${pct(avg)}.`
-                : `Fits ${lowestDiner.name} at ${pct(lowest)}.`}
+                ? `Weakest match is ${lowestDiner.name} at ${pct(lowest)}; the table averages ${pct(avg)}.`
+                : `${lowestDiner.name}'s match is ${pct(lowest)}.`}
             </p>
+            <p className={s.matchNote}>A match is how much of someone&rsquo;s Qloo taste profile this venue&rsquo;s own Qloo tags carry. It is not a prediction of how much they will enjoy it.</p>
           </div>
           <div className={s.pickActions}>
             <PlaceActions pick={pick} here={here} onHere={setHere} shareText={shareText} />
@@ -977,7 +978,7 @@ function Pickboard({
               <div className={s.orderTop}>
                 <Glyph shape={look.shape} color={look.on} size={20} />
                 <span className={s.orderName}>{d.name}</span>
-                <span className={s.orderFit}>fits {pct(f.fit)}</span>
+                <span className={s.orderFit}>{pct(f.fit)} match</span>
               </div>
               <div className={s.orderLoves}>
                 {d.loves.slice(0, 3).map((c) => (
@@ -993,14 +994,15 @@ function Pickboard({
                     : f.order
                       ? "House favourite, not a taste match"
                       : "No highlight fits"}
-                  {d.veg ? ", vegetarian" : ""}
+                  {d.veg ? ", vegetarian by name, confirm with staff" : ""}
+                  {f.order?.shared ? ". Same as someone else: the menu lists nothing else that fits" : ""}
                 </p>
               </DishPhoto>
               {(() => {
                 const said = reviewMentions(pick, f.order?.dish);
                 return said ? (
                   <p className={s.orderSaid}>
-                    <span aria-hidden>★</span> Named in {said} review{said === 1 ? "" : "s"} of {pick.name}
+                    <span aria-hidden>★</span> {said} review mention{said === 1 ? "" : "s"} at {pick.name}
                   </p>
                 ) : null;
               })()}
@@ -1014,14 +1016,14 @@ function Pickboard({
       </ol>
 
       {pick.menu.length > 0 && (
-        <section className={pf.menu} aria-label={`On the menu at ${pick.name}`}>
+        <section className={pf.menu} aria-label={`Menu highlights at ${pick.name}`}>
           <div className={pf.menuHead}>
-            <h3>On the menu at {pick.name}</h3>
-            <p>The venue&rsquo;s own menu highlights in Qloo. Dark ones are on your table.</p>
+            <h3>Menu highlights at {pick.name}</h3>
+            <p>As listed in Qloo for this venue. Menus change, so check on arrival. Dark ones are on your table.</p>
           </div>
           <ul>
             {pick.menu.map((m) => (
-              <li key={m} data-ordered={ordered.has(m)} data-veg={isVeg(m)}>
+              <li key={m} data-ordered={ordered.has(m)} data-veg={isVeg(m) && !isAlcohol(m)}>
                 {m}
               </li>
             ))}
@@ -1053,12 +1055,12 @@ function Pickboard({
                         {[
                           p.area,
                           p.rating != null ? `${p.rating.toFixed(1)}★` : "",
-                          costLine(p) ? `${costLine(p)} a head` : "",
+                          costLine(p) ?? "",
                           (() => {
                             const dl = distanceLine(p, here, result.city);
                             return dl && !dl.inside ? (here ? `${dl.value} from you` : `${dl.value} from the centre`) : "";
                           })(),
-                          `lowest fit ${pct(Math.min(...p.friends.map((f) => f.fit)))}`,
+                          `weakest match ${pct(Math.min(...p.friends.map((f) => f.fit)))}`,
                         ]
                           .filter(Boolean)
                           .join(" · ")}
@@ -1136,6 +1138,13 @@ function Evidence({
             <p>
               <b>Qloo affinity</b> {pick.qlooAffinity.toFixed(3)}
             </p>
+            <p>
+              <b>Table score</b> {pick.tableScore.toFixed(3)}, which is 0.60 &times; the weakest match + 0.25 &times; the average match + 0.15 &times; Qloo&rsquo;s
+              affinity for the venue. The person a venue suits least decides most of the ranking.
+            </p>
+            <p>
+              <b>Dishes</b> come from this venue&rsquo;s Qloo menu highlights. Linking a dish to a cuisine is Sapor&rsquo;s own keyword map, not Qloo data.
+            </p>
             {pick.vibe.length > 0 && (
               <p>
                 <b>Room</b> {pick.vibe.join(", ")}
@@ -1201,14 +1210,14 @@ function HowItDecides() {
     },
     {
       t: "Nobody is left out",
-      p: "Every venue is scored for every person against its own Qloo tags. The lowest score counts as much as the average.",
+      p: "Every venue is scored for every person against its own Qloo tags. The person it suits least decides most of the ranking; Qloo's own affinity only breaks near ties.",
       shape: "leaf" as const,
       c: "var(--green)",
       n: "var(--paper)",
     },
     {
       t: "It writes each order",
-      p: "Menu highlights are matched to each person's cuisines. Vegetarians only get vegetarian dishes, and a house favourite is labelled as one.",
+      p: "Menu highlights are matched to each person's cuisines. Vegetarians only get dishes whose names carry no meat, fish or egg, and a house favourite is labelled as one.",
       shape: "quarter" as const,
       c: "var(--paper)",
       n: "var(--ink)",

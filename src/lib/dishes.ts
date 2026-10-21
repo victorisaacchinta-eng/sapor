@@ -44,12 +44,34 @@ const CUISINE_KEYWORDS: Record<string, string[]> = {
 };
 
 const NON_VEG = [
-  "chicken", "mutton", "lamb", "goat", "beef", "pork", "bacon", "ham", "salami", "pepperoni", "sausage",
-  "fish", "prawn", "prawns", "shrimp", "crab", "lobster", "squid", "calamari", "tuna", "salmon", "seafood",
-  "egg", "eggs", "omelette", "omelet", "keema", "kheema", "haleem", "mandi", "nihari", "paya", "turkey", "duck",
+  "chicken", "mutton", "lamb", "goat", "beef", "pork", "bacon", "ham", "salami", "pepperoni", "sausage", "meat", "meatball",
+  "chorizo", "prosciutto", "pancetta", "veal", "venison", "brisket", "ribs", "wings", "steak", "duck", "turkey", "quail",
+  "fish", "prawn", "prawns", "shrimp", "crab", "lobster", "squid", "calamari", "tuna", "salmon", "seafood", "anchovy", "anchovies",
+  "octopus", "oyster", "oysters", "clam", "clams", "mussel", "mussels", "scallop", "scallops", "caviar", "sashimi", "nigiri",
+  "egg", "eggs", "omelette", "omelet", "keema", "kheema", "haleem", "mandi", "nihari", "paya", "shawarma", "bulgogi", "galbi",
+  "tonkatsu", "pho", "hot dog", "gelatin",
 ];
 
-const ALCOHOL = ["beer", "wine", "cocktail", "cocktails", "whisky", "whiskey", "vodka", "rum", "gin", "tequila", "sangria", "margarita", "martini", "champagne", "prosecco", "ale", "lager", "stout", "sake", "soju", "mezcal", "bourbon", "spritz", "negroni", "liqueur"];
+// Usually made with meat, fish or egg. Treated as non-veg unless the name says otherwise.
+const USUALLY_NOT_VEG = [
+  "biryani", "burger", "kebab", "kabab", "kebabs", "ramen", "dumpling", "dumplings", "momo", "momos", "bao", "dim sum", "dimsum",
+  "katsu", "sushi", "fried rice", "noodle", "noodles", "spring roll", "spring rolls", "taco", "tacos", "burrito", "lasagna", "lasagne",
+  "carbonara", "caesar", "teriyaki", "satay", "wrap", "sizzler", "pizza",
+];
+
+const VEG_MARKERS = [
+  "veg", "veggie", "vegetable", "vegetables", "vegetarian", "vegan", "paneer", "tofu", "mushroom", "mushrooms", "aloo", "potato",
+  "chana", "chole", "dal", "rajma", "falafel", "margherita", "corn", "jackfruit", "soya", "gobi", "palak", "spinach", "bhindi",
+  "baingan", "eggplant", "aubergine", "halloumi", "chickpea", "chickpeas", "beans", "lentil", "lentils", "plant based", "impossible",
+];
+
+const ALCOHOL = [
+  "beer", "wine", "cocktail", "cocktails", "whisky", "whiskey", "vodka", "rum", "gin", "tequila", "sangria", "margarita", "martini",
+  "champagne", "prosecco", "ale", "lager", "stout", "sake", "soju", "mezcal", "bourbon", "spritz", "negroni", "liqueur", "mojito",
+  "daiquiri", "mimosa", "bellini", "colada", "mule", "aperol", "campari", "cider", "ipa", "brandy", "cognac", "vermouth", "amaretto",
+  "highball", "toddy", "feni", "shots", "hard seltzer", "baileys", "kahlua",
+];
+const NOT_ALCOHOL = ["virgin", "mocktail", "mocktails", "non alcoholic", "alcohol free", "zero proof", "0 0", "root beer", "ginger beer", "ginger ale"];
 const DESSERT = ["cake", "cheesecake", "brownie", "gelato", "ice cream", "tiramisu", "pastry", "pastries", "waffle", "pancake", "kunafa", "tres leches", "dessert", "mousse", "sundae", "cookie", "donut", "doughnut", "macaron", "tart", "pie", "crepe", "kulfi", "halwa", "gulab", "jamun", "rasmalai", "sorbet", "custard", "pudding", "baklava", "churro", "shake", "affogato", "creme brulee", "brulee", "falooda", "mithai", "sweet", "chocolate", "nutella", "biscoff", "lovely", "holla"];
 
 const hasWord = (dish: string, words: string[]) => {
@@ -60,13 +82,20 @@ const hasWord = (dish: string, words: string[]) => {
   });
 };
 
-export const isAlcohol = (dish: string) => hasWord(dish, ALCOHOL);
+/** Alcoholic unless the name says virgin, mocktail or similar. */
+export const isAlcohol = (dish: string) => hasWord(dish, ALCOHOL) && !hasWord(dish, NOT_ALCOHOL);
 export const isDessert = (dish: string) => hasWord(dish, DESSERT);
 
-/** Keyword check, deliberately strict: anything that might contain meat or egg is treated as non-veg. */
+/**
+ * Keyword check, deliberately strict. A dish is vegetarian only if it names no
+ * meat, fish or egg, and dishes that are usually made with them (bao, sushi,
+ * burgers...) also need a vegetarian marker in the name ("paneer bao", "veg momos").
+ * It is still a keyword check, not a guarantee, and the UI says so.
+ */
 export function isVeg(dish: string) {
-  const nd = ` ${norm(dish)} `;
-  return !NON_VEG.some((w) => nd.includes(` ${w} `) || nd.includes(` ${w}s `));
+  if (hasWord(dish, NON_VEG)) return false;
+  if (hasWord(dish, USUALLY_NOT_VEG) && !hasWord(dish, VEG_MARKERS)) return false;
+  return true;
 }
 
 export type DishPick = {
@@ -74,6 +103,7 @@ export type DishPick = {
   matchedCuisine?: string;
   keyword?: string;
   kind: "taste_match" | "house_favourite";
+  shared?: boolean; // the menu had nothing else that fits, so someone else has the same dish
 };
 
 function norm(s: string) {
@@ -132,7 +162,8 @@ export function pickDish(
   scored.sort((a, b) => b.score - a.score);
   const fresh = scored.find((s) => !taken.has(s.dish));
   const best = fresh ?? scored[0];
-  if (best) return { dish: best.dish, matchedCuisine: best.cuisine, keyword: best.keyword, kind: "taste_match" };
+  const shared = (dish: string) => (taken.has(dish) ? { shared: true } : {});
+  if (best) return { dish: best.dish, matchedCuisine: best.cuisine, keyword: best.keyword, kind: "taste_match", ...shared(best.dish) };
   const house = dishes.find((d) => !taken.has(d)) ?? dishes[0];
-  return { dish: house, kind: "house_favourite" };
+  return { dish: house, kind: "house_favourite", ...shared(house) };
 }
