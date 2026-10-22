@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://sapor-nu.vercel.app"><img alt="Live demo" src="https://img.shields.io/badge/LIVE_DEMO-open_Sapor-e2452b?style=for-the-badge&labelColor=17130f"></a>
-  <a href="media/sapor-launch.mp4"><img alt="Launch film" src="https://img.shields.io/badge/LAUNCH_FILM-35s,_1080p60-f4b42a?style=for-the-badge&labelColor=17130f"></a>
+  <a href="https://youtu.be/5l6xLzkGpoI"><img alt="Demo video" src="https://img.shields.io/badge/DEMO_VIDEO-2:25_on_YouTube-f4b42a?style=for-the-badge&labelColor=17130f"></a>
   <a href="https://qloo.devpost.com/"><img alt="Qloo Agentic Hackathon" src="https://img.shields.io/badge/QLOO-Agentic_Hackathon_2026-2c4bc4?style=for-the-badge&labelColor=17130f"></a>
 </p>
 <p align="center">
@@ -42,7 +42,7 @@ People are bad at describing food taste in the abstract, but brilliant at naming
 <p align="center">
   <a href="media/sapor-launch.mp4"><img src="media/readme/demo.gif" alt="Pressing Pick our place: Sapor reads the table, streams its steps and lands on Terra Cafe and Bistro" width="100%"></a>
 </p>
-<p align="center"><sub>One continuous take of the real app on the sample table. <a href="media/sapor-launch.mp4"><b>Watch the full 35 second launch film with sound</b></a>.</sub></p>
+<p align="center"><sub>One continuous take of the real app on the sample table. <a href="https://youtu.be/5l6xLzkGpoI"><b>Watch the 2:25 demo video</b></a> (the app, then how it works with Qloo), or the <a href="media/sapor-launch.mp4">35 second launch film</a>.</sub></p>
 
 <img src="media/readme/divider.svg" width="100%" alt="">
 
