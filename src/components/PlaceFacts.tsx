@@ -100,7 +100,7 @@ export function directionsUrl(pick: Pick, here: Here) {
   return `https://www.google.com/maps/dir/?${q}`;
 }
 
-/** The venue's own page on Google Maps (Qloo supplies the id), where the owner's and diners' photos are. We link, we never copy them. */
+/** The venue's own page on Google Maps (Qloo supplies the id), where the owner's and diners' photos are. We link to them, not copy them. */
 export function placePhotosUrl(pick: Pick) {
   const id = pick.details?.googlePlaceId;
   if (!id) return undefined;

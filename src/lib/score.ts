@@ -5,7 +5,7 @@
  * it suits least, then the table's average match, then Qloo's own affinity for
  * the venue (0..1, used as is). Real affinities among nearby candidates sit in a
  * narrow band (about 0.70 to 0.86 in our tests), so at 15% weight affinity only
- * breaks near ties. It can never move a score by more than 0.15, so it cannot
+ * breaks near ties. It can't move a score by more than 0.15, so it cannot
  * outweigh a gap of 25 points or more in the weakest person's match.
  *
  * An earlier version rescaled affinity across the candidates. That turned a 0.03

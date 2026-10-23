@@ -9,7 +9,7 @@ import "server-only";
  * premium (Unsplash+) photos are skipped, and photos that are mainly about
  * people are pushed down.
  *
- * Keys never leave the server. Results are cached here and at the edge, so a
+ * Keys stay on the server. Results are cached here and at the edge, so a
  * dish is looked up once and shared by every visitor.
  */
 
