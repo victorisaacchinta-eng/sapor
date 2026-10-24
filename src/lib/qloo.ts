@@ -1,17 +1,18 @@
 import "server-only";
 
 /**
- * Server-only client for the Qloo hackathon API.
+ * Thin, server-only client for the Qloo hackathon API.
  *
- * - The key is read from the server environment and stays in this module.
- * - Only taste entities and tag ids are sent. No names, emails or device ids.
- * - One retry on 429 / 5xx, and every response is cached for a while so
- *   repeat visits do not burn the event quota.
+ * Rules this file enforces:
+ * - The key is read from the server environment and never leaves this module.
+ * - Only taste entities and tag ids are ever sent. No names, emails or device ids.
+ * - Retries are bounded (one retry on 429 / 5xx) and every response is cached
+ *   briefly so judges clicking around do not burn the event quota.
  */
 
 const BASE = process.env.QLOO_BASE_URL ?? "https://hackathon.api.qloo.com";
 const TIMEOUT_MS = 20_000;
-const CACHE_TTL_MS = 1000 * 60 * 60 * 6;
+const CACHE_TTL_MS = 1000 * 60 * 60 * 6; // 6 hours
 const CACHE_MAX = 800;
 
 export class QlooError extends Error {

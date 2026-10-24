@@ -3,8 +3,8 @@
  * the browser format it the same way and tests can pin it down.
  *
  * Qloo writes ranges ("₹400 to ₹1600"), open-ended floors ("₹2000 or above",
- * "$100+") and plain words ("Expensive"). An open-ended price gets no ceiling,
- * and words stay words.
+ * "$100+") and plain words ("Expensive"). We never invent a ceiling for an
+ * open-ended price, and words stay words.
  */
 
 export type Cost = { costText?: string; costFrom?: number; costTo?: number; costOpen?: boolean; currency?: string };
@@ -20,7 +20,7 @@ export function parseCost(text: string | undefined): Cost {
   const t = text.trim();
   const nums = [...t.replace(/,/g, "").matchAll(/(\d+(?:\.\d+)?)/g)].map((m) => Number(m[1]));
   const currency = t.match(/^[^\d\s]+/)?.[0];
-  // a prefix we do not recognise as money ("L1 to l10") is shown as Qloo wrote it
+  // a prefix we do not recognise as money ("L1 to l10") is shown as Qloo wrote it, never converted
   if (!nums.length || (currency && !KNOWN.has(currency.trim()))) return { costText: t };
   if (OPEN.test(t) && nums.length === 1) return { costText: t, costFrom: nums[0], costOpen: true, currency };
   return { costText: t, costFrom: nums[0], costTo: nums[1] ?? nums[0], currency };

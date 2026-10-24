@@ -5,12 +5,12 @@ import { Glyph } from "./art";
 import { FORTUNES, INTRO_LINES, QUOTES, WORKING_LINES } from "./lines";
 import f from "./flavour.module.css";
 
-/*
- * Intro: a 1.2 s Bauhaus splash on every load, like an app's launch
- * screen. Pure CSS timing, never blocks clicks, skipped for reduced
- * motion. The line is chosen by a tiny script in the layout's <head>
- * before paint, so there is no flicker and no hydration mismatch.
- */
+/* ------------------------------------------------------------------ */
+/* Intro: a 1.2 s Bauhaus splash on every load, like an app's launch    */
+/* screen. Pure CSS timing, never blocks clicks, skipped for reduced    */
+/* motion. The line is chosen by a tiny script in the layout's <head>  */
+/* before paint, so there is no flicker and no hydration mismatch.     */
+/* ------------------------------------------------------------------ */
 
 export function Intro() {
   return (
@@ -41,7 +41,9 @@ export function Intro() {
   );
 }
 
-/* Ticker: real food quotes in a Bauhaus band */
+/* ------------------------------------------------------------------ */
+/* Ticker: real food quotes in a Bauhaus band                          */
+/* ------------------------------------------------------------------ */
 
 export function Ticker() {
   const items = [...QUOTES, ...QUOTES];
@@ -60,7 +62,9 @@ export function Ticker() {
   );
 }
 
-/* Working quips: rotate while the agent reads the table */
+/* ------------------------------------------------------------------ */
+/* Working quips: rotate while the agent reads the table               */
+/* ------------------------------------------------------------------ */
 
 export function WorkingQuip() {
   const [i, setI] = useState(0);
@@ -79,7 +83,9 @@ export function WorkingQuip() {
   );
 }
 
-/* Fortune badge: a spinning corner badge that hands out a food line */
+/* ------------------------------------------------------------------ */
+/* Fortune badge: a spinning corner badge that hands out a food line   */
+/* ------------------------------------------------------------------ */
 
 export function FortuneBadge() {
   const [open, setOpen] = useState(false);

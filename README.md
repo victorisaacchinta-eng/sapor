@@ -93,7 +93,7 @@ People are bad at describing food taste in the abstract, but brilliant at naming
 <details>
 <summary><b>The full agent loop, step by step</b></summary>
 
-1. **Checks what you meant.** Each love is resolved to a Qloo entity. If a name is ambiguous (Dune the 2021 film, the book, or the German techno group), the agent stops and asks instead of guessing, because each draws a different crowd.
+1. **Checks what you meant.** Each love is resolved to a Qloo entity. If a name is genuinely ambiguous (Dune the 2021 film, the book, or the German techno group), the agent stops and asks instead of guessing, because each draws a different crowd.
 2. **Reads each person's taste.** One Qloo call per person returns the cuisines and kinds of rooms that people who share those loves tend to favour.
 3. **Searches real places nearby.** One Qloo call finds venues in the neighbourhood you typed, with everyone's loves (and the table's shared tags) as signals.
 4. **Guards and widens.** Venues Qloo lists as permanently closed, and venues with no cuisine or menu data (Qloo's cafe filter sometimes returns gyms), are set aside. If too few remain, the search widens step by step, and the app says so.

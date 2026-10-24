@@ -1,4 +1,6 @@
 /**
+ * Sapor's dish mapping.
+ *
  * Qloo gives each venue a list of menu highlights ("Korean bun", "Kunafa gelato")
  * and gives each person a set of cuisine affinities ("Korean", "Middle Eastern").
  * Qloo does not link a specific dish to a cuisine, so this file does. It is a
